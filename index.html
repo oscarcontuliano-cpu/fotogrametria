@@ -22,16 +22,18 @@
     h4 { margin: 0 0 8px 0; color: var(--plomo); text-transform: uppercase; font-size: 10px; letter-spacing: 1px; }
     
     input, select { width: 100%; padding: 12px; margin: 5px 0 10px 0; border: 1px solid #d1d1d6; border-radius: 8px; font-size: 14px; background: #fff; }
+    input[type="checkbox"] { width: auto; margin: 0 8px 0 0; transform: scale(1.2); }
     
     button { width: 100%; padding: 14px; border: none; border-radius: 10px; font-weight: bold; font-size: 15px; cursor: pointer; transition: 0.2s; }
     .btn-plomo { background: var(--plomo); color: #fff; }
     .btn-verde { background: var(--verde); color: #fff; }
     .btn-azul { background: var(--azul); color: #fff; }
     .btn-rojo { background: #ff3b30; color: #fff; }
+    .btn-save-tier { width: 90px; padding: 8px; font-size: 12px; }
 
     #mapContainer { position: relative; margin-top: 15px; border-radius: 12px; overflow: hidden; border: 1px solid #ddd; height: 380px; }
     #mapa { height: 100%; width: 100%; background: #000; }
-    .btn-locate { position: absolute; top: 12px; left: 12px; z-index: 1000; background: #fff; border: none; border-radius: 50%; width: 44px; height: 44px; box-shadow: 0 2px 8px rgba(0,0,0,0.3); font-size: 20px; display: flex; align-items: center; justify-content: center; }
+    .btn-locate { position: absolute; top: 12px; right: 55px; z-index: 1000; background: #fff; border: none; border-radius: 50%; width: 44px; height: 44px; box-shadow: 0 2px 8px rgba(0,0,0,0.3); font-size: 20px; display: flex; align-items: center; justify-content: center; }
 
     .tier-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #eee; }
     .list { max-height: 120px; overflow-y: auto; font-size: 11px; padding: 0; list-style: none; margin: 10px 0; border: 1px solid #eee; border-radius: 8px; }
@@ -60,7 +62,7 @@
         <button class="btn-azul" onclick="loadDXF()">CARGAR PLANOS</button>
         
         <div id="fileManager" style="margin-top: 10px; display: none;">
-            <h4 style="margin-top: 15px; color: #333;">DXF Cargados:</h4>
+            <h4 style="margin-top: 15px; color: #333;">Capas Activas:</h4>
             <div id="fileList"></div>
         </div>
     </div>
@@ -103,15 +105,13 @@ let map, mLayer, posMarker = null, watchId = null, mWatchId = null;
 let cLat, cLon, cAlt = 0, cAcc, points = [];
 let fileLayers = {}; 
 
-// --- CONFIGURACIÓN DE MAPAS BASE ---
+// CONFIGURACIÓN DE MAPAS BASE Y FOTOGRAMETRÍA
 const googleSat = L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', { maxNativeZoom: 21, maxZoom: 28 });
 const esriSat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 20 });
-
-// CAPA PIX4D (Asegúrate de que el shareToken sea válido para acceso XYZ)
 const pix4dLayer = L.tileLayer('https://cloud.pix4d.com/tiles/{z}/{x}/{y}.png?dataset=2671082&shareToken=b56028b2-fae7-448d-8196-a3fd4c51a1ba', {
     maxNativeZoom: 21,
     maxZoom: 28,
-    opacity: 1.0
+    zIndex: 10 // Para que se quede abajo de los DXF
 });
 
 const ACI_PALETTE = { 1: "#FF0000", 2: "#FFFF00", 3: "#00FF00", 4: "#00FFFF", 5: "#0000FF", 6: "#FF00FF", 7: "#FFFFFF", 8: "#808080", 9: "#C0C0C0", 256: "#00FFFF" };
@@ -130,36 +130,21 @@ function checkPass() {
 }
 
 function initMap() {
-    // Inicializar mapa
     map = L.map('mapa', { maxZoom: 28, zoomControl: true }).setView([-22.36, -68.85], 14);
-    
-    // Añadir Google por defecto
     googleSat.addTo(map);
-    
     mLayer = L.featureGroup().addTo(map);
 
-    // CONTROL DE CAPAS (Aparece arriba a la derecha)
-    const baseMaps = {
-        "Google Satélite": googleSat,
-        "Esri Satélite": esriSat
-    };
-
-    const overlays = {
-        "Fotogrametría Pix4D": pix4dLayer,
-        "Levantamiento": mLayer
-    };
-
-    L.control.layers(baseMaps, overlays, { collapsed: false }).addTo(map);
+    // Selector de capas arriba a la derecha
+    const baseMaps = { "Google": googleSat, "Esri": esriSat };
+    const overlays = { "Fotogrametría": pix4dLayer, "Levantamiento": mLayer };
+    L.control.layers(baseMaps, overlays, { collapsed: true }).addTo(map);
 }
 
-// --- TODAS TUS FUNCIONES ORIGINALES SIGUEN AQUÍ ABAJO SIN CAMBIOS ---
+// --- TUS FUNCIONES ORIGINALES (DXF, GPS, CSV, ETC) SIN CAMBIOS ---
 
 function toDMS(deg, isLat) {
-    let d = Math.abs(deg);
-    let degrees = Math.floor(d);
-    let m = (d - degrees) * 60;
-    let minutes = Math.floor(m);
-    let seconds = ((m - minutes) * 60).toFixed(3);
+    let d = Math.abs(deg); let degrees = Math.floor(d); let m = (d - degrees) * 60;
+    let minutes = Math.floor(m); let seconds = ((m - minutes) * 60).toFixed(3);
     let dir = isLat ? (deg >= 0 ? "N" : "S") : (deg >= 0 ? "E" : "W");
     return `${degrees}°${minutes}'${seconds}''${dir}`;
 }
@@ -171,36 +156,27 @@ function utmToLl(e, n, ellipse) {
     const e1 = (1 - Math.sqrt(1 - e2)) / (1 + Math.sqrt(1 - e2));
     const phi = mu + (3*e1/2 - 27*e1**3/32)*Math.sin(2*mu);
     const n1 = a / Math.sqrt(1 - e2*Math.sin(phi)**2), r1 = a*(1-e2)/Math.pow(1-e2*Math.sin(phi)**2, 1.5);
-    const d = (e - 500000) / (n1 * k0);
-    const lat = phi - (n1 * Math.tan(phi) / r1) * (d**2/2);
-    const lon = lon0 + d / Math.cos(phi);
-    return { lat, lon };
+    const d = (e - 500000) / (n1 * k0); const lat = phi - (n1 * Math.tan(phi) / r1) * (d**2/2);
+    const lon = lon0 + d / Math.cos(phi); return { lat, lon };
 }
 
 function psadToWgs(e, n) {
-    let ll = utmToLl(e, n, PSAD);
-    const a = PSAD.a, f = PSAD.f, e2 = 2*f - f*f;
-    const h = 0; 
+    let ll = utmToLl(e, n, PSAD); const a = PSAD.a, f = PSAD.f, e2 = 2*f - f*f;
     const n_rad = a / Math.sqrt(1 - e2 * Math.sin(ll.lat)**2);
-    const x = (n_rad + h) * Math.cos(ll.lat) * Math.cos(ll.lon) + SHIFT.dx;
-    const y = (n_rad + h) * Math.cos(ll.lat) * Math.sin(ll.lon) + SHIFT.dy;
-    const z = (n_rad * (1 - e2) + h) * Math.sin(ll.lat) + SHIFT.dz;
-    const lon_w = Math.atan2(y, x);
-    const p = Math.sqrt(x*x + y*y);
-    const lat_w = Math.atan2(z, p * (1 - WGS.f*2)); 
-    return { lat: lat_w * 180 / Math.PI, lon: lon_w * 180 / Math.PI };
+    const x = (n_rad) * Math.cos(ll.lat) * Math.cos(ll.lon) + SHIFT.dx;
+    const y = (n_rad) * Math.cos(ll.lat) * Math.sin(ll.lon) + SHIFT.dy;
+    const z = (n_rad * (1 - e2)) * Math.sin(ll.lat) + SHIFT.dz;
+    const lon_w = Math.atan2(y, x); const p = Math.sqrt(x*x + y*y);
+    const lat_w = Math.atan2(z, p * (1 - WGS.f*2)); return { lat: lat_w * 180 / Math.PI, lon: lon_w * 180 / Math.PI };
 }
 
 function wgsToPsad(lat_w, lon_w) {
     const lat = lat_w * Math.PI/180, lon = lon_w * Math.PI/180;
-    const a = PSAD.a, f = PSAD.f, e2 = 2*f - f*f, k0 = 0.9996;
-    const lon0 = -69 * Math.PI/180;
+    const a = PSAD.a, f = PSAD.f, e2 = 2*f - f*f, k0 = 0.9996; const lon0 = -69 * Math.PI/180;
     const N = a / Math.sqrt(1 - e2 * Math.sin(lat)**2), T = Math.pow(Math.tan(lat), 2);
     const C = (e2/(1-e2)) * Math.pow(Math.cos(lat), 2), A = (lon - lon0) * Math.cos(lat);
     const M = a * ((1 - e2/4 - 3*e2**2/64)*lat - (3*e2/8 + 3*e2**2/32)*Math.sin(2*lat));
-    const este = 500000 + k0 * N * (A + (1-T+C)*A**3/6);
-    const norte = 10000000 + k0 * (M + N*Math.tan(lat)*(A**2/2));
-    return { n: norte, e: este };
+    return { n: 10000000 + k0 * (M + N*Math.tan(lat)*(A**2/2)), e: 500000 + k0 * N * (A + (1-T+C)*A**3/6) };
 }
 
 function localToWgs(e, n) {
@@ -213,126 +189,81 @@ function localToWgs(e, n) {
 
 function wgsToLocal(lat_w, lon_w) {
     const a_w = WGS.a, e2_w = 2*WGS.f - WGS.f**2;
-    let ph = lat_w * Math.PI / 180;
-    let lon_rad = lon_w * Math.PI / 180;
+    let ph = lat_w * Math.PI / 180, lon_rad = lon_w * Math.PI / 180;
     let ng = (ph - lat0_loc) * (a_w * (1 - e2_w / 4)) + n0_loc;
-    let d = (lon_rad - lon0_loc) * Math.cos(ph);
-    let eg = d * (a_w / Math.sqrt(1 - e2_w * Math.sin(ph)**2)) + e0_loc;
-    let ng_s = ng - 24876.363172127;
-    let eg_s = eg - 9765.8504000305;
-    let u = ng_s * Math.cos(rot_loc) - eg_s * Math.sin(rot_loc);
-    let v = ng_s * Math.sin(rot_loc) + eg_s * Math.cos(rot_loc);
-    let n = u * esc_loc + 24876.363172127 + 4.9352591777892;
-    let e = v * esc_loc + 9765.8504000305 - 5.6928548566295;
-    return { n: n, e: e };
+    let eg = (lon_rad - lon0_loc) * Math.cos(ph) * (a_w / Math.sqrt(1 - e2_w * Math.sin(ph)**2)) + e0_loc;
+    let u = (ng - 24876.363172127) * Math.cos(rot_loc) - (eg - 9765.8504000305) * Math.sin(rot_loc);
+    let v = (ng - 24876.363172127) * Math.sin(rot_loc) + (eg - 9765.8504000305) * Math.cos(rot_loc);
+    return { n: u * esc_loc + 24876.363172127 + 4.9352591777892, e: v * esc_loc + 9765.8504000305 - 5.6928548566295 };
 }
 
 function toggleGPS() {
     const btn = document.getElementById('gpsBtn');
     if(!watchId) {
         watchId = navigator.geolocation.watchPosition(p => {
-            cLat = p.coords.latitude; cLon = p.coords.longitude; 
-            cAlt = p.coords.altitude || 0; cAcc = p.coords.accuracy;
+            cLat = p.coords.latitude; cLon = p.coords.longitude; cAlt = p.coords.altitude || 0; cAcc = p.coords.accuracy;
             document.getElementById('statusAcc').innerText = `SEÑAL: ±${cAcc.toFixed(2)}m | Z: ${cAlt.toFixed(1)}m`;
-            if(!posMarker) {
-                posMarker = L.circleMarker([cLat, cLon], {radius:7, color:'#fff', fillColor:'#34c759', fillOpacity:1, weight:2}).addTo(map);
-                map.setView([cLat, cLon], 20);
-            } else posMarker.setLatLng([cLat, cLon]);
+            if(!posMarker) { posMarker = L.circleMarker([cLat, cLon], {radius:7, color:'#fff', fillColor:'#34c759', fillOpacity:1, weight:2}).addTo(map); map.setView([cLat, cLon], 20); }
+            else posMarker.setLatLng([cLat, cLon]);
         }, null, {enableHighAccuracy:true});
-        btn.className = "btn-verde"; btn.innerText = "✅ GPS ACTIVO";
-        document.getElementById('measureBtn').disabled = false;
-    } else {
-        navigator.geolocation.clearWatch(watchId); watchId = null;
-        btn.className = "btn-plomo"; btn.innerText = "🛰️ GPS APAGADO";
-        document.getElementById('measureBtn').disabled = true;
-    }
+        btn.className = "btn-verde"; btn.innerText = "✅ GPS ACTIVO"; document.getElementById('measureBtn').disabled = false;
+    } else { navigator.geolocation.clearWatch(watchId); watchId = null; btn.className = "btn-plomo"; btn.innerText = "🛰️ GPS APAGADO"; document.getElementById('measureBtn').disabled = true; }
 }
 
 function openMeasure() {
     document.getElementById('measurePanel').style.display = 'block';
     const tiers = document.getElementById('tiers'); tiers.innerHTML = "";
     let epochCounts = {1:0, 2:0, 3:0, 4:0, 5:0};
-    [1,2,3,4,5].forEach(t => {
-        tiers.innerHTML += `<div class="tier-row"><span>≤ ${t}m</span><button id="bt-${t}" class="btn-save-tier btn-plomo" disabled onclick="savePt(${t})">0/10</button></div>`;
-    });
+    [1,2,3,4,5].forEach(t => { tiers.innerHTML += `<div class="tier-row"><span>≤ ${t}m</span><button id="bt-${t}" class="btn-save-tier btn-plomo" disabled onclick="savePt(${t})">0/10</button></div>`; });
     mWatchId = navigator.geolocation.watchPosition(p => {
         [1,2,3,4,5].forEach(t => {
             let b = document.getElementById(`bt-${t}`);
-            if(p.coords.accuracy <= t) { 
-                if(epochCounts[t] < 10) {
-                    epochCounts[t]++;
-                    if(epochCounts[t] >= 10) {
-                        b.disabled = false; b.className = "btn-save-tier btn-verde"; b.innerText = "GUARDAR";
-                    } else b.innerText = `${epochCounts[t]}/10`;
-                }
+            if(p.coords.accuracy <= t && epochCounts[t] < 10) {
+                epochCounts[t]++;
+                if(epochCounts[t] >= 10) { b.disabled = false; b.className = "btn-save-tier btn-verde"; b.innerText = "GUARDAR"; }
+                else b.innerText = `${epochCounts[t]}/10`;
             }
         });
     }, null, {enableHighAccuracy:true});
 }
 
 function savePt(t) {
-    const name = document.getElementById('ptName').value || `P-${points.length+1}`;
-    const sys = document.getElementById('saveSys').value;
+    const name = document.getElementById('ptName').value || `P-${points.length+1}`; const sys = document.getElementById('saveSys').value;
     points.push({ name, lat: cLat, lon: cLon, alt: cAlt, acc: cAcc, tol: t, sys: sys });
     L.circleMarker([cLat, cLon], {radius:6, color:'#fff', fillColor:'#ff3b30', fillOpacity:1, weight:2}).addTo(mLayer);
-    let label = "";
-    if(sys === 'psad') { let res = wgsToPsad(cLat, cLon); label = `Y:${res.n.toFixed(2)} X:${res.e.toFixed(2)} Z:${cAlt.toFixed(2)}`; }
-    else if (sys === 'local') { let res = wgsToLocal(cLat, cLon); label = `Y:${res.n.toFixed(2)} X:${res.e.toFixed(2)} Z:${cAlt.toFixed(2)}`; }
-    else label = `Lat:${toDMS(cLat, true)} Lon:${toDMS(cLon, false)} Z:${cAlt.toFixed(2)}`;
+    let label = (sys === 'psad') ? `Y:${wgsToPsad(cLat, cLon).n.toFixed(2)} X:${wgsToPsad(cLat, cLon).e.toFixed(2)} Z:${cAlt.toFixed(2)}` : (sys === 'local') ? `Y:${wgsToLocal(cLat, cLon).n.toFixed(2)} X:${wgsToLocal(cLat, cLon).e.toFixed(2)} Z:${cAlt.toFixed(2)}` : `Lat:${toDMS(cLat, true)} Lon:${toDMS(cLon, false)} Z:${cAlt.toFixed(2)}`;
     document.getElementById('ptList').innerHTML += `<li class="list-item"><b>${name}</b> | ${label} | ±${cAcc.toFixed(2)}m</li>`;
-    document.getElementById('downloadBtn').style.display = 'block';
-    closeMeasure();
+    document.getElementById('downloadBtn').style.display = 'block'; closeMeasure();
 }
 
-function closeMeasure() {
-    document.getElementById('measurePanel').style.display = 'none';
-    if(mWatchId) navigator.geolocation.clearWatch(mWatchId);
-}
+function closeMeasure() { document.getElementById('measurePanel').style.display = 'none'; if(mWatchId) navigator.geolocation.clearWatch(mWatchId); }
 
 function updateFileManagerUI() {
-    const fileManager = document.getElementById('fileManager');
-    const fileListDiv = document.getElementById('fileList');
+    const fileManager = document.getElementById('fileManager'); const fileListDiv = document.getElementById('fileList');
     if (Object.keys(fileLayers).length === 0) { fileManager.style.display = 'none'; return; }
-    fileManager.style.display = 'block';
-    fileListDiv.innerHTML = '';
+    fileManager.style.display = 'block'; fileListDiv.innerHTML = '';
     for (let fileName in fileLayers) {
         const isVisible = map.hasLayer(fileLayers[fileName]);
-        fileListDiv.innerHTML += `<div class="tier-row"><label><input type="checkbox" ${isVisible ? 'checked' : ''} onchange="toggleFileVisibility('${fileName}')"> ${fileName}</label><button class="btn-rojo" style="width:30px; height:30px; padding:0" onclick="removeFile('${fileName}')">X</button></div>`;
+        fileListDiv.innerHTML += `<div class="tier-row"><label><input type="checkbox" ${isVisible ? 'checked' : ''} onchange="toggleFileVisibility('${fileName}')"> ${fileName}</label><button class="btn-rojo" style="width:32px; height:32px; padding:0" onclick="removeFile('${fileName}')">X</button></div>`;
     }
 }
 
-function toggleFileVisibility(fileName) {
-    const layer = fileLayers[fileName];
-    map.hasLayer(layer) ? map.removeLayer(layer) : map.addLayer(layer);
-}
-
-function removeFile(fileName) {
-    if (fileLayers[fileName]) { map.removeLayer(fileLayers[fileName]); delete fileLayers[fileName]; updateFileManagerUI(); fitAllFilesBounds(); }
-    document.getElementById('file').value = "";
-}
-
+function toggleFileVisibility(fileName) { const layer = fileLayers[fileName]; map.hasLayer(layer) ? map.removeLayer(layer) : map.addLayer(layer); }
+function removeFile(fileName) { if (fileLayers[fileName]) { map.removeLayer(fileLayers[fileName]); delete fileLayers[fileName]; updateFileManagerUI(); fitAllFilesBounds(); } document.getElementById('file').value = ""; }
 function fitAllFilesBounds() {
-    let combinedBounds = L.latLngBounds();
-    let hasVisibleLayers = false;
-    for (let key in fileLayers) {
-        if (map.hasLayer(fileLayers[key])) {
-            let layerBounds = fileLayers[key].getBounds();
-            if (layerBounds.isValid()) { combinedBounds.extend(layerBounds); hasVisibleLayers = true; }
-        }
-    }
+    let combinedBounds = L.latLngBounds(); let hasVisibleLayers = false;
+    for (let key in fileLayers) { if (map.hasLayer(fileLayers[key])) { let layerBounds = fileLayers[key].getBounds(); if (layerBounds.isValid()) { combinedBounds.extend(layerBounds); hasVisibleLayers = true; } } }
     if (hasVisibleLayers) map.fitBounds(combinedBounds);
 }
 
-function readFileAsync(file) { return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = e => resolve(e.target.result); reader.readAsText(file, 'UTF-8'); }); }
+function readFileAsync(file) { return new Promise((resolve) => { const reader = new FileReader(); reader.onload = e => resolve(e.target.result); reader.readAsText(file, 'UTF-8'); }); }
 
 async function loadDXF() {
-    const files = document.getElementById('file').files;
-    const sys = document.getElementById('dxfSys').value;
+    const files = document.getElementById('file').files; const sys = document.getElementById('dxfSys').value;
     if(files.length === 0) return;
     for (let f of files) {
         try {
-            let text = await readFileAsync(f);
-            const dxf = new DxfParser().parseSync(text);
+            let text = await readFileAsync(f); const dxf = new DxfParser().parseSync(text);
             let currentFileLayer = L.featureGroup();
             dxf.entities.forEach(ent => {
                 let color = (ent.layer && CUSTOM_LAYERS[ent.layer]) ? CUSTOM_LAYERS[ent.layer] : (ACI_PALETTE[ent.color] || "#00FFFF");
@@ -361,8 +292,7 @@ function exportCSV() {
         else { y = toDMS(p.lat, true); x = toDMS(p.lon, false); }
         csv += `${p.name},${p.sys},${y},${x},${z},${p.acc.toFixed(3)}\n`;
     });
-    const blob = new Blob([csv], {type:'text/csv'});
-    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = "Levantamiento.csv"; a.click();
+    const blob = new Blob([csv], {type:'text/csv'}); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = "Levantamiento.csv"; a.click();
 }
 </script>
 </body>
