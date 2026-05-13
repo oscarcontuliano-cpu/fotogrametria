@@ -111,12 +111,10 @@ let map, mLayer, posMarker = null, watchId = null, mWatchId = null;
 let cLat, cLon, cAlt = 0, cAcc, points = [];
 let fileData = {}; 
 
-// Paleta ACI AutoCAD resumida (Index -> Hex)
-const aciToHex = {
-    1:"#ff0000", 2:"#ffff00", 3:"#00ff00", 4:"#00ffff", 5:"#0000ff", 6:"#ff00ff", 7:"#ffffff", 8:"#808080", 9:"#c0c0c0", 10:"#ff0000"
+const aciColors = {
+    1: "#FF0000", 2: "#FFFF00", 3: "#00FF00", 4: "#00FFFF", 5: "#0000FF", 
+    6: "#FF00FF", 7: "#000000", 8: "#808080", 9: "#C0C0C0", 30: "#FFA500"
 };
-// Inversa para exportación (Hex -> Index aproximado)
-const hexToAci = {"#ff0000":1, "#ffff00":2, "#00ff00":3, "#00ffff":4, "#0000ff":5, "#ff00ff":6, "#ffffff":7, "#000000":7, "#808080":8};
 
 const lat0_loc=-22.36086191*Math.PI/180, lon0_loc=-68.85328566*Math.PI/180;
 const n0_loc=27601.38091, e0_loc=15295.6027, esc_loc=1.0004539155031, rot_loc=0.0642663374911*Math.PI/180;
@@ -134,8 +132,7 @@ function initMap() {
     const esriSat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxNativeZoom: 18, maxZoom: 28, attribution: 'Esri' });
     
     googleSat.addTo(map);
-    // RESTAURADO: Control de capas base en la parte inferior izquierda
-    L.control.layers({ "Google Sat": googleSat, "Esri World": esriSat }, null, { position: 'bottomleft' }).addTo(map);
+    L.control.layers({ "Google Sat": googleSat, "Esri Sat": esriSat }, null, { position: 'bottomleft' }).addTo(map);
     mLayer = L.featureGroup().addTo(map);
 }
 
@@ -214,12 +211,11 @@ async function loadDXF() {
                 dxf.entities.forEach(ent => {
                     let lName = ent.layer || "0";
                     if(!layersData[lName]) {
-                        // Respetar color de capa del DXF o blanco/negro (7) por defecto
-                        let aci = dxfLayers[lName] ? dxfLayers[lName].colorIndex : 7;
-                        layersData[lName] = { group: L.featureGroup().addTo(mainGroup), hex: aciToHex[aci] || "#8e8e93" };
+                        layersData[lName] = { group: L.featureGroup().addTo(mainGroup), aci: dxfLayers[lName] ? dxfLayers[lName].colorIndex : 7 };
                     }
+                    let entAci = ent.colorIndex !== undefined ? ent.colorIndex : layersData[lName].aci;
+                    let hex = aciColors[entAci] || "#8e8e93";
                     
-                    let hex = layersData[lName].hex;
                     if(['LINE','POLYLINE','LWPOLYLINE'].includes(ent.type)) {
                         let pts = ent.vertices.map(v => {
                             let coords = (sys==='psad') ? psadToWgs(v.x,v.y) : (sys==='local' ? localToWgs(v.x,v.y) : {lat:v.y, lon:v.x});
@@ -252,49 +248,23 @@ function updateFileListUI() {
     const cont = document.getElementById('fileListUI'); cont.innerHTML = '';
     Object.keys(fileData).forEach(fName => {
         let card = document.createElement('div'); card.className = 'file-card';
-        let html = `
-            <div class="file-header" onclick="toggleLayerMenu('${fName}')">
-                <span class="file-title">📁 ${fName}</span>
-                <button class="btn-rojo" style="width:30px; height:30px; padding:0; border-radius:50%;" onclick="removeFile(event, '${fName}')">X</button>
-            </div>
-            <div id="layers-${fName}" class="layer-list">
-                <div class="export-box">
-                    <h4 style="color:#333; font-size:9px">DESCARGAR TRANSFORMADO</h4>
-                    <select id="exp-${fName}" style="padding:6px; font-size:12px; margin-bottom:5px">
-                        <option value="psad">A PSAD56 UTM 19S</option>
-                        <option value="local">A Sistema Local</option>
-                        <option value="wgs">A WGS84 Lat/Lon</option>
-                    </select>
-                    <button class="btn-verde" style="padding:10px; font-size:12px" onclick="exportTransformedDXF('${fName}')">DESCARGAR .DXF</button>
-                </div>`;
+        let html = `<div class="file-header" onclick="toggleLayerMenu('${fName}')"><span class="file-title">📁 ${fName}</span><button class="btn-rojo" style="width:30px; height:30px; padding:0; border-radius:50%;" onclick="removeFile(event, '${fName}')">X</button></div><div id="layers-${fName}" class="layer-list"><div class="export-box"><h4 style="color:#333; font-size:9px">DESCARGAR TRANSFORMADO</h4><select id="exp-${fName}" style="padding:6px; font-size:12px; margin-bottom:5px"><option value="psad">A PSAD56 UTM 19S</option><option value="local">A Sistema Local</option><option value="wgs">A WGS84 Lat/Lon</option></select><button class="btn-verde" style="padding:10px; font-size:12px" onclick="exportTransformedDXF('${fName}')">DESCARGAR .DXF</button></div>`;
         Object.keys(fileData[fName].layers).forEach(lName => {
-            let hex = fileData[fName].layers[lName].hex;
+            let aci = fileData[fName].layers[lName].aci;
+            let hex = aciColors[aci] || "#8e8e93";
             let isVis = fileData[fName].group.hasLayer(fileData[fName].layers[lName].group);
-            html += `
-                <div class="layer-item">
-                    <label class="layer-label">
-                        <input type="checkbox" ${isVis ? 'checked' : ''} onchange="toggleSubLayer('${fName}', '${lName}')">
-                        <input type="color" class="color-picker" value="${hex}" onchange="changeLayerCol('${fName}', '${lName}', this.value)">
-                        <span class="layer-text">${lName}</span>
-                    </label>
-                </div>`;
+            html += `<div class="layer-item"><label class="layer-label"><input type="checkbox" ${isVis ? 'checked' : ''} onchange="toggleSubLayer('${fName}', '${lName}')"><input type="color" class="color-picker" value="${hex}" onchange="changeLayerCol('${fName}', '${lName}', this.value)"><span class="layer-text">${lName}</span></label></div>`;
         });
         card.innerHTML = html + `</div>`; cont.appendChild(card);
     });
 }
 
 function changeLayerCol(fName, lName, newHex) {
-    fileData[fName].layers[lName].hex = newHex;
     fileData[fName].layers[lName].group.eachLayer(layer => {
         if (layer.setStyle) layer.setStyle({ color: newHex, fillColor: newHex });
-        // Actualizar color de etiquetas (DivIcon)
         if (layer.options && layer.options.icon) {
-            let html = layer.options.icon.options.html;
-            layer.setIcon(L.divIcon({ 
-                className: 'dxf-label-container', 
-                html: html.replace(/color:.*?"/, `color:${newHex}"`), 
-                iconAnchor: [0, 0] 
-            }));
+            let div = layer.getElement().querySelector('div');
+            if (div) div.style.color = newHex;
         }
     });
 }
@@ -304,24 +274,17 @@ function exportTransformedDXF(fName) {
     const targetSys = document.getElementById(`exp-${fName}`).value;
     const dxf = data.originalDxf;
     const sourceSys = data.sourceSys;
-
     let out = "  0\nSECTION\n  2\nHEADER\n  0\nENDSEC\n  0\nSECTION\n  2\nENTITIES\n";
-
     const convertPoint = (v) => {
         let wgs = (sourceSys === 'psad') ? psadToWgs(v.x, v.y) : (sourceSys === 'local' ? localToWgs(v.x, v.y) : { lat: v.y, lon: v.x });
         if (targetSys === 'psad') { let r = wgsToPsad(wgs.lat, wgs.lon); return { x: r.e, y: r.n, z: v.z || 0 }; }
         if (targetSys === 'local') { let r = wgsToLocal(wgs.lat, wgs.lon); return { x: r.e, y: r.n, z: v.z || 0 }; }
         return { x: wgs.lon, y: wgs.lat, z: v.z || 0 };
     };
-
     dxf.entities.forEach(ent => {
         let lName = ent.layer || "0";
         if (data.layers[lName] && !data.group.hasLayer(data.layers[lName].group)) return;
-        
-        // Usar el color actual de la capa (modificado o original)
-        let hex = data.layers[lName].hex;
-        let aci = hexToAci[hex.toLowerCase()] || 7;
-
+        let aci = ent.colorIndex !== undefined ? ent.colorIndex : (data.layers[lName] ? data.layers[lName].aci : 7);
         if (ent.type === 'LINE') {
             let p1 = convertPoint(ent.vertices[0]); let p2 = convertPoint(ent.vertices[1]);
             out += `  0\nLINE\n  8\n${lName}\n 62\n${aci}\n 10\n${p1.x}\n 20\n${p1.y}\n 30\n${p1.z}\n 11\n${p2.x}\n 21\n${p2.y}\n 31\n${p2.z}\n`;
@@ -346,7 +309,6 @@ function exportTransformedDXF(fName) {
             }
         }
     });
-
     out += "  0\nENDSEC\n  0\nEOF";
     const blob = new Blob([out], {type: 'application/dxf'});
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
