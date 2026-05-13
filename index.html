@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <meta name="theme-color" content="#1c1c1e">
-<title>Rover Topográfico Pro - FULL V11 3D</title>
+<title>Rover Topográfico Pro - FULL V10 3D</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -239,9 +239,8 @@ async function loadDXF() {
                             return [coords.lat, coords.lon];
                         });
                         if(pts.length > 1) L.polyline(pts, {color: hex, weight: 2}).addTo(layersData[lName].group);
-                    } else if (ent.type === 'POINT' || ent.type === 'CIRCLE') {
-                        let pos = ent.position || ent.center;
-                        let w = (sys==='psad') ? psadToWgs(pos.x,pos.y) : (sys==='local' ? localToWgs(pos.x,pos.y) : {lat:pos.y, lon:pos.x});
+                    } else if (ent.type === 'POINT') {
+                        let w = (sys==='psad') ? psadToWgs(ent.position.x,ent.position.y) : (sys==='local' ? localToWgs(ent.position.x,ent.position.y) : {lat:ent.position.y, lon:ent.position.x});
                         L.circleMarker([w.lat, w.lon], {radius:4, color: hex, fillColor:hex, fillOpacity:1}).addTo(layersData[lName].group);
                     } else if (['TEXT','MTEXT'].includes(ent.type)) {
                         let pos = ent.startPoint || ent.position;
@@ -304,7 +303,7 @@ function changeLayerCol(fName, lName, newHex) {
     });
 }
 
-// --- EXPORTACIÓN DEFINITIVA CON GESTIÓN DE Z APLASTADA ESTRICTA ---
+// --- EXPORTACIÓN DEFINITIVA CON GESTIÓN COMPLETA DE Z ---
 function exportTransformedDXF(fName) {
     const data = fileData[fName];
     const targetSys = document.getElementById(`exp-${fName}`).value;
@@ -314,30 +313,27 @@ function exportTransformedDXF(fName) {
 
     let out = "  0\nSECTION\n  2\nHEADER\n  0\nENDSEC\n  0\nSECTION\n  2\nENTITIES\n";
 
-    // Función que garantiza formato 100% numérico con 6 decimales para evitar rechazos en CAD
     const transformCoord = (x, y, z) => {
         let wgs = (sourceSys === 'psad') ? psadToWgs(x, y) : (sourceSys === 'local' ? localToWgs(x, y) : { lat: y, lon: x });
-        let outX, outY, outZ = z !== undefined ? z : 0;
+        let outX, outY, outZ = z || 0;
         
+        // Conversión XY
         if (targetSys === 'psad') { let r = wgsToPsad(wgs.lat, wgs.lon); outX = r.e; outY = r.n; }
         else if (targetSys === 'local') { let r = wgsToLocal(wgs.lat, wgs.lon); outX = r.e; outY = r.n; }
         else { outX = wgs.lon; outY = wgs.lat; }
         
+        // Gestión de Elevación Z
         if (zMode === 'zero') {
-            outZ = 0.0;
+            outZ = 0;
         } else if (zMode === 'transform') {
+            // Lógica de transformación de elevación mediante factor de escala local
             let zWgs = outZ;
             if (sourceSys === 'local') zWgs = outZ / esc_loc;
             if (targetSys === 'local') outZ = zWgs * esc_loc;
             else outZ = zWgs;
         }
 
-        // Se retorna todo formateado estrictamente a 6 decimales obligando al CAD a parsear correctamente
-        return { 
-            x: Number(outX).toFixed(6), 
-            y: Number(outY).toFixed(6), 
-            z: Number(outZ).toFixed(6) 
-        };
+        return { x: outX, y: outY, z: outZ };
     };
 
     dxf.entities.forEach(ent => {
@@ -354,7 +350,8 @@ function exportTransformedDXF(fName) {
             let isClosed = (ent.shape || (ent.flag & 1)) ? 1 : 0;
             let elevGlobal = ent.elevation || 0;
             
-            out += `  0\nPOLYLINE\n100\nAcDbEntity\n  8\n${lName}\n 62\n${aci}\n100\nAcDb3dPolyline\n 66\n1\n 10\n0.000000\n 20\n0.000000\n 30\n0.000000\n 70\n${isClosed | 8}\n`;
+            // Forzamos salida AcDb3dPolyline para proteger el 3D independientemente del sistema
+            out += `  0\nPOLYLINE\n100\nAcDbEntity\n  8\n${lName}\n 62\n${aci}\n100\nAcDb3dPolyline\n 66\n1\n 10\n0.0\n 20\n0.0\n 30\n0.0\n 70\n${isClosed | 8}\n`;
             
             ent.vertices.forEach(v => {
                 let zActual = (ent.type === 'POLYLINE') ? (v.z || 0) : elevGlobal;
@@ -367,21 +364,12 @@ function exportTransformedDXF(fName) {
             let p = transformCoord(ent.position.x, ent.position.y, ent.position.z);
             out += `  0\nPOINT\n100\nAcDbEntity\n  8\n${lName}\n 62\n${aci}\n100\nAcDbPoint\n 10\n${p.x}\n 20\n${p.y}\n 30\n${p.z}\n`;
         } 
-        else if (ent.type === 'CIRCLE' || ent.type === 'ARC') {
-            let p = transformCoord(ent.center.x, ent.center.y, ent.center.z);
-            let rad = Number(ent.radius || 1).toFixed(6);
-            out += `  0\n${ent.type}\n100\nAcDbEntity\n  8\n${lName}\n 62\n${aci}\n100\nAcDbCircle\n 10\n${p.x}\n 20\n${p.y}\n 30\n${p.z}\n 40\n${rad}\n`;
-            if (ent.type === 'ARC') {
-                out += `100\nAcDbArc\n 50\n${Number(ent.startAngle).toFixed(6)}\n 51\n${Number(ent.endAngle).toFixed(6)}\n`;
-            }
-        }
         else if (['TEXT', 'MTEXT'].includes(ent.type)) {
             let pos = ent.startPoint || ent.position;
             if (pos) {
                 let p = transformCoord(pos.x, pos.y, pos.z);
                 let clean = ent.text ? ent.text.replace(/\\P/g, " ").replace(/\\{.*?\\}/g, "").replace(/[{};]/g, "") : "";
-                let tHeight = Number(ent.textHeight || 1).toFixed(6);
-                out += `  0\nTEXT\n100\nAcDbEntity\n  8\n${lName}\n 62\n${aci}\n100\nAcDbText\n 10\n${p.x}\n 20\n${p.y}\n 30\n${p.z}\n 40\n${tHeight}\n  1\n${clean}\n`;
+                out += `  0\nTEXT\n100\nAcDbEntity\n  8\n${lName}\n 62\n${aci}\n100\nAcDbText\n 10\n${p.x}\n 20\n${p.y}\n 30\n${p.z}\n 40\n${ent.textHeight || 1}\n  1\n${clean}\n`;
             }
         }
     });
