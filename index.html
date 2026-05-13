@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <meta name="theme-color" content="#1c1c1e">
-<title>Rover Topográfico Pro - FULL V8.1</title>
+<title>Rover Topográfico Pro - FULL V8</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -29,31 +29,46 @@
     .btn-plomo { background: var(--plomo); color: #fff; }
     .btn-rojo { background: #ff3b30; color: #fff; }
 
+    /* MAPA */
     #mapContainer { position: relative; margin-top: 15px; border-radius: 12px; overflow: hidden; border: 1px solid #ddd; height: 350px; background: #000; transition: height 0.3s ease; }
     #mapContainer.expanded { height: 620px; }
     #mapa { height: 100%; width: 100%; }
     
+    /* BOTONES FLOTANTES */
     .map-ctrl { position: absolute; right: 10px; z-index: 1000; background: #fff; border: none; border-radius: 50%; width: 44px; height: 44px; box-shadow: 0 2px 10px rgba(0,0,0,0.3); font-size: 20px; display: flex; align-items: center; justify-content: center; cursor: pointer; }
     #btnRecenterGPS { top: 12px; }
     #btnRecenterFiles { top: 65px; }
     #btnResizeMap { top: 118px; color: var(--azul); }
 
+    /* ETIQUETAS DXF */
     .dxf-label-container { color: #fff; font-weight: bold; font-size: 12px; white-space: nowrap; text-shadow: 2px 0 0 #000, -2px 0 0 #000, 0 2px 0 #000, 0 -2px 0 #000; pointer-events: none; }
 
+    /* UI DE ARCHIVOS CARGADOS */
     .file-card { background: #fff; border: 1px solid #ddd; border-radius: 10px; margin-bottom: 8px; overflow: hidden; }
     .file-header { padding: 12px; display: flex; align-items: center; justify-content: space-between; background: #f1f1f1; cursor: pointer; }
     .file-title { font-size: 13px; font-weight: bold; color: #333; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 180px; }
     
     .layer-list { padding: 5px 12px; background: #fafafa; display: none; border-top: 1px solid #eee; }
-    .export-zone { padding: 10px; background: #eef2f7; border-top: 1px solid #ddd; display: flex; gap: 5px; flex-direction: column; }
-    
     .layer-item { display: flex; align-items: center; padding: 10px 0; border-bottom: 1px solid #f0f0f0; }
+    .layer-item:last-child { border: none; }
+    
+    .layer-label { font-size: 12px; color: #444; flex-grow: 1; display: flex; align-items: center; cursor: pointer; overflow: hidden; }
+    .layer-text { margin-left: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    
     .color-picker { width: 28px; height: 28px; border: 1px solid #ccc; padding: 0; background: none; cursor: pointer; margin: 0 10px; border-radius: 4px; flex-shrink: 0; }
     input[type="checkbox"] { width: 20px; height: 20px; flex-shrink: 0; margin: 0; cursor: pointer; }
 
+    /* LISTA DE PUNTOS GRABADOS */
     .summary-box { display: flex; justify-content: space-around; background: #1c1c1e; color: #fff; padding: 10px; border-radius: 10px; margin-bottom: 10px; font-size: 12px; }
     .list { max-height: 250px; overflow-y: auto; font-size: 11px; padding: 0; list-style: none; margin: 10px 0; border: 1px solid #eee; border-radius: 8px; background: #fff; }
     .list-item { padding: 12px; border-bottom: 1px solid #eee; line-height: 1.6; }
+    .list-item:nth-child(odd) { background: #f9f9f9; }
+    .pt-header { display: flex; justify-content: space-between; font-weight: bold; color: var(--azul); border-bottom: 1px solid #f0f0f0; margin-bottom: 5px; font-size: 12px; }
+    .pt-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; color: #333; }
+
+    /* ESTILOS EXPORTACION */
+    .export-box { padding: 10px; background: #eef2f7; border-radius: 8px; margin: 10px 0; }
+    .export-box select { padding: 8px; font-size: 12px; margin-bottom: 5px; }
 </style>
 </head>
 <body>
@@ -70,9 +85,9 @@
     <div class="card">
         <h4>1. Carga de Planos (DXF)</h4>
         <select id="dxfSys">
-            <option value="psad">Origen: PSAD56 UTM 19S</option>
-            <option value="local">Origen: Sistema Local</option>
-            <option value="wgs">Origen: WGS84 Lat/Lon</option>
+            <option value="psad">Cargar en PSAD56 UTM 19S</option>
+            <option value="local">Cargar en Sistema Local</option>
+            <option value="wgs">Cargar en WGS84 Lat/Lon</option>
         </select>
         <input type="file" id="file" accept=".dxf" multiple>
         <button class="btn-azul" onclick="loadDXF()">IMPORTAR DXF</button>
@@ -123,6 +138,7 @@ let map, mLayer, posMarker = null, watchId = null, mWatchId = null;
 let cLat, cLon, cAlt = 0, cAcc, points = [];
 let fileData = {}; 
 
+// Parámetros Local
 const lat0_loc=-22.36086191*Math.PI/180, lon0_loc=-68.85328566*Math.PI/180;
 const n0_loc=27601.38091, e0_loc=15295.6027, esc_loc=1.0004539155031, rot_loc=0.0642663374911*Math.PI/180;
 
@@ -135,7 +151,11 @@ function checkPass() {
 
 function initMap() {
     map = L.map('mapa', { maxZoom: 28, zoomControl: false }).setView([-22.36, -68.85], 14);
-    L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', { maxNativeZoom: 21, maxZoom: 28 }).addTo(map);
+    const googleSat = L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', { maxNativeZoom: 21, maxZoom: 28 });
+    const esriSat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxNativeZoom: 18, maxZoom: 28, attribution: 'Esri' });
+    
+    googleSat.addTo(map);
+    L.control.layers({ "Google Sat": googleSat, "Esri World Imagery": esriSat }, null, { position: 'bottomleft' }).addTo(map);
     mLayer = L.featureGroup().addTo(map);
 }
 
@@ -148,6 +168,16 @@ function getRandomColor(str) {
     let hash = 0;
     for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
     return '#' + (hash & 0x00FFFFFF).toString(16).toUpperCase().padStart(6, '0');
+}
+
+function toDMS(deg, isLat) {
+    let d = Math.abs(deg);
+    let degrees = Math.floor(d);
+    let m = (d - degrees) * 60;
+    let minutes = Math.floor(m);
+    let seconds = ((m - minutes) * 60).toFixed(2);
+    let dir = isLat ? (deg >= 0 ? "N" : "S") : (deg >= 0 ? "E" : "W");
+    return `${degrees}°${minutes}'${seconds}"${dir}`;
 }
 
 // --- TRANSFORMACIONES ---
@@ -184,138 +214,7 @@ function localToWgs(e, n) {
     return { lat: ph*180/Math.PI, lon: (lon0_loc+d/Math.cos(ph))*180/Math.PI };
 }
 
-// Lógica de transformación universal de coordenadas
-function transformCoords(x, y, from, to) {
-    let wgs;
-    if (from === 'psad') wgs = psadToWgs(x, y);
-    else if (from === 'local') wgs = localToWgs(x, y);
-    else wgs = { lat: y, lon: x };
-
-    if (to === 'psad') { let r = wgsToPsad(wgs.lat, wgs.lon); return { x: r.e, y: r.n }; }
-    if (to === 'local') { let r = wgsToLocal(wgs.lat, wgs.lon); return { x: r.e, y: r.n }; }
-    return { x: wgs.lon, y: wgs.lat };
-}
-
-// --- CARGA DE DXF ---
-async function loadDXF() {
-    const files = document.getElementById('file').files;
-    const fromSys = document.getElementById('dxfSys').value;
-    if(!files.length) return;
-
-    for (let f of files) {
-        const reader = new FileReader();
-        const fName = f.name;
-        reader.onload = e => {
-            try {
-                const dxf = new DxfParser().parseSync(e.target.result);
-                let mainGroup = L.featureGroup();
-                let layersInFile = {};
-
-                dxf.entities.forEach(ent => {
-                    let lName = ent.layer || "0";
-                    if(!layersInFile[lName]) layersInFile[lName] = L.featureGroup().addTo(mainGroup);
-                    let col = getRandomColor(lName);
-                    
-                    if(['LINE','POLYLINE','LWPOLYLINE'].includes(ent.type)) {
-                        let pts = ent.vertices.map(v => {
-                            let w = transformCoords(v.x, v.y, fromSys, 'wgs');
-                            return [w.x, w.y]; // Leaflet usa [lat, lon], pero transformCoords devuelve {x:lon, y:lat} para 'wgs'
-                        });
-                        if(pts.length > 1) L.polyline(pts.map(p => [p.y, p.x]), {color: col, weight: 2}).addTo(layersInFile[lName]);
-                    } else if (ent.type === 'POINT') {
-                        let w = transformCoords(ent.position.x, ent.position.y, fromSys, 'wgs');
-                        L.circleMarker([w.y, w.x], {radius:4, color: col, fillColor:col, fillOpacity:1}).addTo(layersInFile[lName]);
-                    }
-                });
-
-                fileData[fName] = { group: mainGroup, layers: layersInFile, rawEntities: dxf.entities, originalSys: fromSys };
-                mainGroup.addTo(map);
-                fitAllFilesBounds();
-                updateFileListUI();
-            } catch(err) { console.error(err); alert("Error al leer: " + fName); }
-        };
-        reader.readAsText(f);
-    }
-}
-
-function updateFileListUI() {
-    const cont = document.getElementById('fileListUI');
-    cont.innerHTML = '';
-    Object.keys(fileData).forEach(fName => {
-        let card = document.createElement('div');
-        card.className = 'file-card';
-        card.innerHTML = `
-            <div class="file-header" onclick="toggleLayerMenu('${fName}')">
-                <span class="file-title">📁 ${fName}</span>
-                <button class="btn-rojo" style="width:30px; height:30px; padding:0; border-radius:50%;" onclick="removeFile(event, '${fName}')">X</button>
-            </div>
-            <div id="layers-${fName}" class="layer-list">
-                <div class="export-zone">
-                    <h4 style="color:#007aff; margin-bottom:5px">TRANSFORMAR Y EXPORTAR</h4>
-                    <select id="targetSys-${fName}" style="padding:8px; margin:0">
-                        <option value="psad">Exportar a PSAD56</option>
-                        <option value="local">Exportar a Local</option>
-                        <option value="wgs">Exportar a WGS84</option>
-                    </select>
-                    <button class="btn-verde" style="padding:8px; font-size:12px" onclick="exportTransformedDXF('${fName}')">💾 DESCARGAR DXF</button>
-                </div>
-            </div>`;
-        cont.appendChild(card);
-    });
-}
-
-function toggleLayerMenu(fName) {
-    let el = document.getElementById(`layers-${fName}`);
-    el.style.display = (el.style.display === 'block') ? 'none' : 'block';
-}
-
-function removeFile(e, fName) {
-    e.stopPropagation();
-    if(fileData[fName]) { map.removeLayer(fileData[fName].group); delete fileData[fName]; updateFileListUI(); }
-}
-
-// --- MOTOR DE EXPORTACIÓN DXF ---
-function exportTransformedDXF(fName) {
-    const data = fileData[fName];
-    const targetSys = document.getElementById(`targetSys-${fName}`).value;
-    
-    let dxfContent = "  0\nSECTION\n  2\nHEADER\n  0\nENDSEC\n  0\nSECTION\n  2\nENTITIES\n";
-
-    data.rawEntities.forEach(ent => {
-        if (ent.type === 'LINE') {
-            let p1 = transformCoords(ent.vertices[0].x, ent.vertices[0].y, data.originalSys, targetSys);
-            let p2 = transformCoords(ent.vertices[1].x, ent.vertices[1].y, data.originalSys, targetSys);
-            dxfContent += `  0\nLINE\n  8\n${ent.layer}\n 10\n${p1.x}\n 20\n${p1.y}\n 30\n0.0\n 11\n${p2.x}\n 21\n${p2.y}\n 31\n0.0\n`;
-        } 
-        else if (ent.type === 'LWPOLYLINE' || ent.type === 'POLYLINE') {
-            dxfContent += `  0\nLWPOLYLINE\n  8\n${ent.layer}\n 90\n${ent.vertices.length}\n 70\n0\n`;
-            ent.vertices.forEach(v => {
-                let p = transformCoords(v.x, v.y, data.originalSys, targetSys);
-                dxfContent += ` 10\n${p.x}\n 20\n${p.y}\n`;
-            });
-        }
-        else if (ent.type === 'POINT') {
-            let p = transformCoords(ent.position.x, ent.position.y, data.originalSys, targetSys);
-            dxfContent += `  0\nPOINT\n  8\n${ent.layer}\n 10\n${p.x}\n 20\n${p.y}\n 30\n0.0\n`;
-        }
-        else if (ent.type === 'TEXT' || ent.type === 'MTEXT') {
-            let pos = ent.startPoint || ent.position;
-            let p = transformCoords(pos.x, pos.y, data.originalSys, targetSys);
-            let txt = ent.text.replace(/\r?\n|\r/g, " ");
-            dxfContent += `  0\nTEXT\n  8\n${ent.layer}\n 10\n${p.x}\n 20\n${p.y}\n 40\n${ent.textHeight || 2.0}\n  1\n${txt}\n`;
-        }
-    });
-
-    dxfContent += "  0\nENDSEC\n  0\nEOF";
-    
-    const blob = new Blob([dxfContent], {type: 'application/dxf'});
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `${fName.split('.')[0]}_${targetSys.toUpperCase()}.dxf`;
-    a.click();
-}
-
-// --- GPS Y OTROS (IGUALES) ---
+// --- GPS ---
 function toggleGPS() {
     const btn = document.getElementById('gpsBtn');
     if(!watchId) {
@@ -337,12 +236,179 @@ function toggleGPS() {
     }
 }
 function recenterGPS() { if(cLat) map.setView([cLat, cLon], 22); }
+
+// --- CARGA DE PLANOS ---
+async function loadDXF() {
+    const files = document.getElementById('file').files;
+    const sys = document.getElementById('dxfSys').value;
+    if(!files.length) return;
+
+    for (let f of files) {
+        const reader = new FileReader();
+        const fName = f.name;
+        reader.onload = e => {
+            let text = e.target.result;
+            if (!text.includes("HEADER")) text = "  0\nSECTION\n  2\nHEADER\n  0\nENDSEC\n" + text;
+            try {
+                const dxf = new DxfParser().parseSync(text);
+                let mainGroup = L.featureGroup();
+                let layersInFile = {};
+
+                dxf.entities.forEach(ent => {
+                    let lName = ent.layer || "0";
+                    if(!layersInFile[lName]) layersInFile[lName] = L.featureGroup().addTo(mainGroup);
+                    let col = getRandomColor(lName);
+                    
+                    let w = null;
+                    if(['LINE','POLYLINE','LWPOLYLINE'].includes(ent.type)) {
+                        let pts = ent.vertices.map(v => {
+                            let coords = (sys==='psad') ? psadToWgs(v.x,v.y) : (sys==='local' ? localToWgs(v.x,v.y) : {lat:v.y, lon:v.x});
+                            return [coords.lat, coords.lon];
+                        });
+                        if(pts.length > 1) L.polyline(pts, {color: col, weight: 2}).addTo(layersInFile[lName]);
+                    } else if (ent.type === 'POINT') {
+                        w = (sys==='psad') ? psadToWgs(ent.position.x,ent.position.y) : (sys==='local' ? localToWgs(ent.position.x,ent.position.y) : {lat:ent.position.y, lon:ent.position.x});
+                        L.circleMarker([w.lat, w.lon], {radius:4, color: col, fillColor:col, fillOpacity:1}).addTo(layersInFile[lName]);
+                    } else if (['TEXT','MTEXT'].includes(ent.type)) {
+                        let pos = ent.startPoint || ent.position;
+                        if(pos) {
+                            w = (sys==='psad') ? psadToWgs(pos.x,pos.y) : (sys==='local' ? localToWgs(pos.x,pos.y) : {lat:pos.y, lon:pos.x});
+                            let cleanTxt = ent.text ? ent.text.replace(/\\P/g, " ").replace(/\\{.*?\\}/g, "").replace(/[{};]/g, "") : "";
+                            L.marker([w.lat, w.lon], {
+                                icon: L.divIcon({ className: 'dxf-label-container', html: `<div>${cleanTxt}</div>`, iconAnchor: [0, 0] })
+                            }).addTo(layersInFile[lName]);
+                        }
+                    }
+                });
+
+                fileData[fName] = { group: mainGroup, layers: layersInFile, originalDxf: dxf, sourceSys: sys };
+                mainGroup.addTo(map);
+                fitAllFilesBounds();
+                updateFileListUI();
+            } catch(err) { alert("Error al leer: " + fName); }
+        };
+        reader.readAsText(f);
+    }
+}
+
+function updateFileListUI() {
+    const cont = document.getElementById('fileListUI');
+    cont.innerHTML = '';
+    Object.keys(fileData).forEach(fName => {
+        let card = document.createElement('div');
+        card.className = 'file-card';
+        let html = `
+            <div class="file-header" onclick="toggleLayerMenu('${fName}')">
+                <span class="file-title">📁 ${fName}</span>
+                <button class="btn-rojo" style="width:30px; height:30px; padding:0; border-radius:50%;" onclick="removeFile(event, '${fName}')">X</button>
+            </div>
+            <div id="layers-${fName}" class="layer-list">
+                <div class="export-box">
+                    <h4 style="color:#000">Transformar y Exportar</h4>
+                    <select id="exportSys-${fName}">
+                        <option value="psad">Exportar a PSAD56 UTM 19S</option>
+                        <option value="local">Exportar a Sistema Local</option>
+                        <option value="wgs">Exportar a WGS84 Lat/Lon</option>
+                    </select>
+                    <button class="btn-verde" onclick="exportTransformedDXF('${fName}')">DESCARGAR DXF</button>
+                </div>
+                <hr>`;
+        
+        Object.keys(fileData[fName].layers).forEach(lName => {
+            let col = getRandomColor(lName);
+            let isVis = fileData[fName].group.hasLayer(fileData[fName].layers[lName]);
+            html += `
+                <div class="layer-item">
+                    <label class="layer-label">
+                        <input type="checkbox" ${isVis ? 'checked' : ''} onchange="toggleSubLayer('${fName}', '${lName}')">
+                        <input type="color" class="color-picker" value="${col}" onchange="changeLayerCol('${fName}', '${lName}', this.value)">
+                        <span class="layer-text">${lName}</span>
+                    </label>
+                </div>`;
+        });
+        card.innerHTML = html + `</div>`;
+        cont.appendChild(card);
+    });
+}
+
+// --- LOGICA DE EXPORTACIÓN DXF ---
+function exportTransformedDXF(fName) {
+    const data = fileData[fName];
+    const targetSys = document.getElementById(`exportSys-${fName}`).value;
+    const dxf = data.originalDxf;
+    const sourceSys = data.sourceSys;
+
+    let dxfContent = "  0\nSECTION\n  2\nHEADER\n  0\nENDSEC\n  0\nSECTION\n  2\nENTITIES\n";
+
+    dxf.entities.forEach(ent => {
+        const convert = (x, y) => {
+            // 1. A WGS84 primero
+            let wgs = (sourceSys === 'psad') ? psadToWgs(x, y) : (sourceSys === 'local' ? localToWgs(x, y) : { lat: y, lon: x });
+            // 2. Al destino
+            if (targetSys === 'psad') { let r = wgsToPsad(wgs.lat, wgs.lon); return { x: r.e, y: r.n }; }
+            if (targetSys === 'local') { let r = wgsToLocal(wgs.lat, wgs.lon); return { x: r.e, y: r.n }; }
+            return { x: wgs.lon, y: wgs.lat };
+        };
+
+        if (ent.type === 'LINE') {
+            let p1 = convert(ent.vertices[0].x, ent.vertices[0].y);
+            let p2 = convert(ent.vertices[1].x, ent.vertices[1].y);
+            dxfContent += `  0\nLINE\n  8\n${ent.layer}\n 10\n${p1.x}\n 20\n${p1.y}\n 11\n${p2.x}\n 21\n${p2.y}\n`;
+        } else if (ent.type === 'LWPOLYLINE' || ent.type === 'POLYLINE') {
+            dxfContent += `  0\nLWPOLYLINE\n  8\n${ent.layer}\n 90\n${ent.vertices.length}\n 70\n${ent.shape ? 1 : 0}\n`;
+            ent.vertices.forEach(v => {
+                let p = convert(v.x, v.y);
+                dxfContent += ` 10\n${p.x}\n 20\n${p.y}\n`;
+            });
+        } else if (ent.type === 'POINT') {
+            let p = convert(ent.position.x, ent.position.y);
+            dxfContent += `  0\nPOINT\n  8\n${ent.layer}\n 10\n${p.x}\n 20\n${p.y}\n`;
+        } else if (ent.type === 'TEXT' || ent.type === 'MTEXT') {
+            let pos = ent.startPoint || ent.position;
+            let p = convert(pos.x, pos.y);
+            let txt = ent.text.replace(/\n/g, " ");
+            dxfContent += `  0\nTEXT\n  8\n${ent.layer}\n 10\n${p.x}\n 20\n${p.y}\n 40\n${ent.textHeight || 1}\n  1\n${txt}\n`;
+        }
+    });
+
+    dxfContent += "  0\nENDSEC\n  0\nEOF";
+    
+    const blob = new Blob([dxfContent], { type: 'application/dxf' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `TRANSFORMADO_${targetSys.toUpperCase()}_${fName}`;
+    a.click();
+}
+
+function changeLayerCol(fName, lName, newCol) {
+    fileData[fName].layers[lName].eachLayer(layer => {
+        if (layer.setStyle) layer.setStyle({ color: newCol, fillColor: newCol });
+        if (layer.getElement && layer.getElement().firstChild) layer.getElement().firstChild.style.color = newCol;
+    });
+}
+
+function toggleLayerMenu(fName) {
+    let el = document.getElementById(`layers-${fName}`);
+    el.style.display = (el.style.display === 'block') ? 'none' : 'block';
+}
+
+function toggleSubLayer(fName, lName) {
+    let p = fileData[fName].group; let c = fileData[fName].layers[lName];
+    p.hasLayer(c) ? p.removeLayer(c) : p.addLayer(c);
+}
+
+function removeFile(e, fName) {
+    e.stopPropagation();
+    if(fileData[fName]) { map.removeLayer(fileData[fName].group); delete fileData[fName]; updateFileListUI(); }
+}
+
 function fitAllFilesBounds() {
     let bounds = L.latLngBounds(); let hasV = false;
     Object.values(fileData).forEach(d => { if(map.hasLayer(d.group)) { let b = d.group.getBounds(); if(b.isValid()) { bounds.extend(b); hasV = true; } } });
     if(hasV) map.fitBounds(bounds);
 }
 
+// --- LEVANTAMIENTO ---
 function openMeasure() {
     document.getElementById('measurePanel').style.display = 'block';
     const ui = document.getElementById('tiersUI'); ui.innerHTML = "";
@@ -368,11 +434,20 @@ function savePt(t) {
     points.push({ name, lat: cLat, lon: cLon, alt: cAlt, acc: cAcc, sys: sys });
     L.circleMarker([cLat, cLon], {radius:6, color:'#000', fillColor:'#ff3b30', fillOpacity:1, weight:2}).addTo(mLayer);
     
-    let html = `<li class="list-item"><b>${name}</b> | ${sys.toUpperCase()} <br>`;
-    let coord = (sys === 'psad') ? wgsToPsad(cLat, cLon) : (sys === 'local' ? wgsToLocal(cLat, cLon) : {e:cLon, n:cLat});
-    html += `N: ${coord.n.toFixed(3)}, E: ${coord.e.toFixed(3)}, Z: ${cAlt.toFixed(2)}</li>`;
-    document.getElementById('ptList').innerHTML = html + document.getElementById('ptList').innerHTML;
+    let html = `<li class="list-item"><div class="pt-header"><span>Punto: ${name}</span><span>${sys.toUpperCase()}</span></div><div class="pt-grid">`;
+    if (sys === 'wgs') {
+        html += `<span><b>Lat:</b> ${toDMS(cLat, true)}</span><span><b>Lon:</b> ${toDMS(cLon, false)}</span>
+                 <span><b>Elev:</b> ${cAlt.toFixed(3)}m</span><span><b>Prec:</b> ±${cAcc.toFixed(2)}m</span>`;
+    } else {
+        let coord = (sys === 'psad') ? wgsToPsad(cLat, cLon) : wgsToLocal(cLat, cLon);
+        html += `<span><b>N (Y):</b> ${coord.n.toFixed(3)}</span><span><b>E (X):</b> ${coord.e.toFixed(3)}</span>
+                 <span><b>Z (Cota):</b> ${cAlt.toFixed(3)}m</span><span><b>Prec:</b> ±${cAcc.toFixed(2)}m</span>`;
+    }
+    document.getElementById('ptList').innerHTML = html + `</div></li>` + document.getElementById('ptList').innerHTML;
+    
     document.getElementById('totalPts').innerText = points.length;
+    let avg = points.reduce((a,b) => a + b.acc, 0) / points.length;
+    document.getElementById('avgAcc').innerText = avg.toFixed(2) + "m";
     document.getElementById('downloadBtn').style.display = 'block';
     closeMeasure();
 }
@@ -380,10 +455,13 @@ function savePt(t) {
 function closeMeasure() { document.getElementById('measurePanel').style.display = 'none'; if(mWatchId) navigator.geolocation.clearWatch(mWatchId); }
 
 function exportCSV() {
-    let csv = "ID,SISTEMA,NORTE_Y,ESTE_X,Z,PRECISION\n";
+    let csv = "ID,SISTEMA,NORTE_Y_LAT,ESTE_X_LON,Z,PRECISION\n";
     points.forEach(p => {
-        let r = transformCoords(p.lon, p.lat, 'wgs', p.sys);
-        csv += `${p.name},${p.sys},${r.y.toFixed(3)},${r.x.toFixed(3)},${p.alt.toFixed(3)},${p.acc.toFixed(3)}\n`;
+        let y, x;
+        if (p.sys === 'psad') { let r = wgsToPsad(p.lat, p.lon); y = r.n.toFixed(3); x = r.e.toFixed(3); }
+        else if (p.sys === 'local') { let r = wgsToLocal(p.lat, p.lon); y = r.n.toFixed(3); x = r.e.toFixed(3); }
+        else { y = p.lat.toFixed(8); x = p.lon.toFixed(8); }
+        csv += `${p.name},${p.sys},${y},${x},${p.alt.toFixed(3)},${p.acc.toFixed(3)}\n`;
     });
     const blob = new Blob([csv], {type:'text/csv'});
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = "Levantamiento.csv"; a.click();
