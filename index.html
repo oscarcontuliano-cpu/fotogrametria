@@ -266,7 +266,7 @@ function changeLayerCol(fName, lName, newHex) {
     });
 }
 
-// --- FUNCIÓN DE EXPORTACIÓN CON COTA CORREGIDA ---
+// --- EXPORTACIÓN CON CORRECCIÓN DE COTA (Z) ---
 function exportTransformedDXF(fName) {
     const data = fileData[fName];
     const targetSys = document.getElementById(`exp-${fName}`).value;
@@ -287,7 +287,6 @@ function exportTransformedDXF(fName) {
     dxf.entities.forEach(ent => {
         let lName = ent.layer || "0";
         if (data.layers[lName] && !data.group.hasLayer(data.layers[lName].group)) return;
-        
         let aci = ent.colorIndex !== undefined ? ent.colorIndex : (data.layers[lName] ? data.layers[lName].aci : 7);
 
         if (ent.type === 'LINE') {
@@ -296,17 +295,17 @@ function exportTransformedDXF(fName) {
             out += `  0\nLINE\n  8\n${lName}\n 62\n${aci}\n 10\n${p1.x}\n 20\n${p1.y}\n 30\n${p1.z}\n 11\n${p2.x}\n 21\n${p2.y}\n 31\n${p2.z}\n`;
         } 
         else if (['LWPOLYLINE', 'POLYLINE'].includes(ent.type)) {
+            let is3D = (ent.type === 'POLYLINE' && (ent.flag & 8));
             let flag = (ent.shape || (ent.flag & 1)) ? 1 : 0;
-            if (ent.type === 'POLYLINE' && (ent.flag & 8)) flag |= 8; // Polilínea 3D
-            
-            // La cota de una LWPOLYLINE es global para toda la entidad (ent.elevation)
-            // La cota de una POLYLINE (3D) está en cada vértice (v.z)
-            let globalElevation = ent.elevation || 0;
+            if (is3D) flag |= 8;
+
+            // LWPOLYLINE guarda la Z global en 'elevation', POLYLINE 3D en cada vértice 'z'
+            let elevGlobal = ent.elevation || 0;
 
             out += `  0\nPOLYLINE\n  8\n${lName}\n 62\n${aci}\n 66\n1\n 70\n${flag}\n`;
             ent.vertices.forEach(v => {
-                let currentZ = (ent.type === 'POLYLINE') ? (v.z || 0) : globalElevation;
-                let p = transformCoord(v.x, v.y, currentZ);
+                let zActual = (ent.type === 'POLYLINE') ? (v.z || 0) : elevGlobal;
+                let p = transformCoord(v.x, v.y, zActual);
                 out += `  0\nVERTEX\n  8\n${lName}\n 10\n${p.x}\n 20\n${p.y}\n 30\n${p.z}\n`;
             });
             out += `  0\nSEQEND\n  8\n${lName}\n`;
