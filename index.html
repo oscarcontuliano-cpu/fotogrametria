@@ -132,7 +132,7 @@ function initMap() {
     const esriSat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxNativeZoom: 18, maxZoom: 28, attribution: 'Esri' });
     
     googleSat.addTo(map);
-    L.control.layers({ "Google Sat": googleSat, "Esri World": esriSat }, null, { position: 'bottomleft' }).addTo(map);
+    L.control.layers({ "Google Sat": googleSat, "Esri Sat": esriSat }, null, { position: 'bottomleft' }).addTo(map);
     mLayer = L.featureGroup().addTo(map);
 }
 
@@ -260,13 +260,14 @@ function updateFileListUI() {
 function changeLayerCol(fName, lName, newHex) {
     fileData[fName].layers[lName].group.eachLayer(layer => {
         if (layer.setStyle) layer.setStyle({ color: newHex, fillColor: newHex });
-        if (layer.getElement && layer.getElement().querySelector('div')) {
-            layer.getElement().querySelector('div').style.color = newHex;
+        if (layer.options && layer.options.icon) {
+            let div = layer.getElement().querySelector('div');
+            if (div) div.style.color = newHex;
         }
     });
 }
 
-// --- EXPORTACIÓN CON CORRECCIÓN DE COTA (Z) ---
+// --- EXPORTACIÓN CORREGIDA CON COTA 3D (BIT 8 ACTIVADO) ---
 function exportTransformedDXF(fName) {
     const data = fileData[fName];
     const targetSys = document.getElementById(`exp-${fName}`).value;
@@ -287,6 +288,7 @@ function exportTransformedDXF(fName) {
     dxf.entities.forEach(ent => {
         let lName = ent.layer || "0";
         if (data.layers[lName] && !data.group.hasLayer(data.layers[lName].group)) return;
+        
         let aci = ent.colorIndex !== undefined ? ent.colorIndex : (data.layers[lName] ? data.layers[lName].aci : 7);
 
         if (ent.type === 'LINE') {
@@ -295,12 +297,11 @@ function exportTransformedDXF(fName) {
             out += `  0\nLINE\n  8\n${lName}\n 62\n${aci}\n 10\n${p1.x}\n 20\n${p1.y}\n 30\n${p1.z}\n 11\n${p2.x}\n 21\n${p2.y}\n 31\n${p2.z}\n`;
         } 
         else if (['LWPOLYLINE', 'POLYLINE'].includes(ent.type)) {
-            let is3D = (ent.type === 'POLYLINE' && (ent.flag & 8));
-            let flag = (ent.shape || (ent.flag & 1)) ? 1 : 0;
-            if (is3D) flag |= 8;
-
-            // LWPOLYLINE guarda la Z global en 'elevation', POLYLINE 3D en cada vértice 'z'
+            let isClosed = (ent.shape || (ent.flag & 1)) ? 1 : 0;
             let elevGlobal = ent.elevation || 0;
+            
+            // CRÍTICO: Activar Bit 8 (valor 8) en Flag 70 para que el CAD vea la polilínea como 3D
+            let flag = isClosed | 8; 
 
             out += `  0\nPOLYLINE\n  8\n${lName}\n 62\n${aci}\n 66\n1\n 70\n${flag}\n`;
             ent.vertices.forEach(v => {
