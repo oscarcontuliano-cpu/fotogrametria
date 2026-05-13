@@ -14,46 +14,33 @@
     :root { --plomo: #8e8e93; --verde: #34c759; --azul: #007aff; --fondo: #f2f2f7; }
     body { font-family: -apple-system, sans-serif; background: var(--fondo); margin: 0; padding: 0; }
     .container { max-width: 500px; margin: 0 auto; background: #fff; min-height: 100vh; padding: 15px; box-sizing: border-box; }
-    
     #loginOverlay { position: fixed; inset: 0; background: #1c1c1e; z-index: 10000; display: flex; align-items: center; justify-content: center; }
     .msg-box { background: #fff; padding: 25px; border-radius: 18px; text-align: center; width: 85%; }
-    
     .card { background: #f8f8fa; border: 1px solid #e5e5ea; border-radius: 12px; padding: 15px; margin-bottom: 12px; }
     h4 { margin: 0 0 8px 0; color: var(--plomo); text-transform: uppercase; font-size: 10px; letter-spacing: 1px; }
-    
     input, select { width: 100%; padding: 12px; margin: 5px 0 10px 0; border: 1px solid #d1d1d6; border-radius: 8px; font-size: 14px; background: #fff; box-sizing: border-box;}
-    
     button { width: 100%; padding: 14px; border: none; border-radius: 10px; font-weight: bold; font-size: 15px; cursor: pointer; transition: 0.2s; }
     .btn-azul { background: var(--azul); color: #fff; }
     .btn-verde { background: var(--verde); color: #fff; }
     .btn-plomo { background: var(--plomo); color: #fff; }
     .btn-rojo { background: #ff3b30; color: #fff; }
-
-    /* MAPA */
     #mapContainer { position: relative; margin-top: 15px; border-radius: 12px; overflow: hidden; border: 1px solid #ddd; height: 350px; background: #000; transition: height 0.3s ease; }
     #mapContainer.expanded { height: 620px; }
     #mapa { height: 100%; width: 100%; }
-    
     .map-ctrl { position: absolute; right: 10px; z-index: 1000; background: #fff; border: none; border-radius: 50%; width: 44px; height: 44px; box-shadow: 0 2px 10px rgba(0,0,0,0.3); font-size: 20px; display: flex; align-items: center; justify-content: center; cursor: pointer; }
     #btnRecenterGPS { top: 12px; }
     #btnRecenterFiles { top: 65px; }
     #btnResizeMap { top: 118px; color: var(--azul); }
-
     .dxf-label-container { color: #fff; font-weight: bold; font-size: 12px; white-space: nowrap; text-shadow: 2px 0 0 #000, -2px 0 0 #000, 0 2px 0 #000, 0 -2px 0 #000; pointer-events: none; }
-
     .file-card { background: #fff; border: 1px solid #ddd; border-radius: 10px; margin-bottom: 8px; overflow: hidden; }
     .file-header { padding: 12px; display: flex; align-items: center; justify-content: space-between; background: #f1f1f1; cursor: pointer; }
     .file-title { font-size: 13px; font-weight: bold; color: #333; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 180px; }
-    
     .layer-list { padding: 5px 12px; background: #fafafa; display: none; border-top: 1px solid #eee; }
     .layer-item { display: flex; align-items: center; padding: 10px 0; border-bottom: 1px solid #f0f0f0; }
-    
     .layer-label { font-size: 12px; color: #444; flex-grow: 1; display: flex; align-items: center; cursor: pointer; overflow: hidden; }
     .layer-text { margin-left: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    
     .color-picker { width: 28px; height: 28px; border: 1px solid #ccc; padding: 0; background: none; cursor: pointer; margin: 0 10px; border-radius: 4px; flex-shrink: 0; }
     input[type="checkbox"] { width: 20px; height: 20px; flex-shrink: 0; margin: 0; cursor: pointer; }
-
     .export-box { padding: 10px; background: #eef2f7; border-radius: 8px; margin: 10px 0; border: 1px solid #d1d1d6; }
 </style>
 </head>
@@ -211,21 +198,17 @@ async function loadDXF() {
     const files = document.getElementById('file').files;
     const sys = document.getElementById('dxfSys').value;
     if(!files.length) return;
-
     for (let f of files) {
         const reader = new FileReader();
         reader.onload = e => {
-            let text = e.target.result;
             try {
-                const dxf = new DxfParser().parseSync(text);
+                const dxf = new DxfParser().parseSync(e.target.result);
                 let mainGroup = L.featureGroup();
                 let layersInFile = {};
-
                 dxf.entities.forEach(ent => {
                     let lName = ent.layer || "0";
                     if(!layersInFile[lName]) layersInFile[lName] = L.featureGroup().addTo(mainGroup);
                     let col = getRandomColor(lName);
-                    
                     if(['LINE','POLYLINE','LWPOLYLINE'].includes(ent.type)) {
                         let pts = ent.vertices.map(v => {
                             let coords = (sys==='psad') ? psadToWgs(v.x,v.y) : (sys==='local' ? localToWgs(v.x,v.y) : {lat:v.y, lon:v.x});
@@ -244,7 +227,6 @@ async function loadDXF() {
                         }
                     }
                 });
-
                 fileData[f.name] = { group: mainGroup, layers: layersInFile, originalDxf: dxf, sourceSys: sys };
                 mainGroup.addTo(map);
                 fitAllFilesBounds();
@@ -256,11 +238,9 @@ async function loadDXF() {
 }
 
 function updateFileListUI() {
-    const cont = document.getElementById('fileListUI');
-    cont.innerHTML = '';
+    const cont = document.getElementById('fileListUI'); cont.innerHTML = '';
     Object.keys(fileData).forEach(fName => {
-        let card = document.createElement('div');
-        card.className = 'file-card';
+        let card = document.createElement('div'); card.className = 'file-card';
         let html = `
             <div class="file-header" onclick="toggleLayerMenu('${fName}')">
                 <span class="file-title">📁 ${fName}</span>
@@ -275,12 +255,9 @@ function updateFileListUI() {
                         <option value="wgs">A WGS84 Lat/Lon</option>
                     </select>
                     <button class="btn-verde" style="padding:10px; font-size:12px" onclick="exportTransformedDXF('${fName}')">DESCARGAR .DXF</button>
-                </div>
-                <hr style="border:0; border-top:1px solid #eee">`;
-        
+                </div>`;
         Object.keys(fileData[fName].layers).forEach(lName => {
-            let col = getRandomColor(lName);
-            let isVis = fileData[fName].group.hasLayer(fileData[fName].layers[lName]);
+            let col = getRandomColor(lName); let isVis = fileData[fName].group.hasLayer(fileData[fName].layers[lName]);
             html += `
                 <div class="layer-item">
                     <label class="layer-label">
@@ -290,27 +267,26 @@ function updateFileListUI() {
                     </label>
                 </div>`;
         });
-        card.innerHTML = html + `</div>`;
-        cont.appendChild(card);
+        card.innerHTML = html + `</div>`; cont.appendChild(card);
     });
 }
 
-// --- FUNCIÓN DE EXPORTACIÓN ROBUSTA (TODO EL CONTENIDO) ---
+// --- FUNCIÓN DE EXPORTACIÓN CORREGIDA (PRESERVA TODO EL CONTENIDO 3D) ---
 function exportTransformedDXF(fName) {
     const data = fileData[fName];
     const targetSys = document.getElementById(`exp-${fName}`).value;
     const dxf = data.originalDxf;
     const sourceSys = data.sourceSys;
 
+    // Header básico para compatibilidad universal
     let out = "  0\nSECTION\n  2\nHEADER\n  0\nENDSEC\n  0\nSECTION\n  2\nENTITIES\n";
 
-    const convertVertex = (v) => {
+    const convertPoint = (v) => {
         if (!v) return { x: 0, y: 0, z: 0 };
-        let x = v.x, y = v.y, z = v.z || 0;
-        let wgs = (sourceSys === 'psad') ? psadToWgs(x, y) : (sourceSys === 'local' ? localToWgs(x, y) : { lat: y, lon: x });
-        if (targetSys === 'psad') { let r = wgsToPsad(wgs.lat, wgs.lon); return { x: r.e, y: r.n, z: z }; }
-        if (targetSys === 'local') { let r = wgsToLocal(wgs.lat, wgs.lon); return { x: r.e, y: r.n, z: z }; }
-        return { x: wgs.lon, y: wgs.lat, z: z };
+        let wgs = (sourceSys === 'psad') ? psadToWgs(v.x, v.y) : (sourceSys === 'local' ? localToWgs(v.x, v.y) : { lat: v.y, lon: v.x });
+        if (targetSys === 'psad') { let r = wgsToPsad(wgs.lat, wgs.lon); return { x: r.e, y: r.n, z: v.z || 0 }; }
+        if (targetSys === 'local') { let r = wgsToLocal(wgs.lat, wgs.lon); return { x: r.e, y: r.n, z: v.z || 0 }; }
+        return { x: wgs.lon, y: wgs.lat, z: v.z || 0 };
     };
 
     dxf.entities.forEach(ent => {
@@ -318,99 +294,80 @@ function exportTransformedDXF(fName) {
         if (data.layers[lName] && !data.group.hasLayer(data.layers[lName])) return;
 
         if (ent.type === 'LINE') {
-            let p1 = convertVertex(ent.vertices[0]);
-            let p2 = convertVertex(ent.vertices[1]);
+            let p1 = convertPoint(ent.vertices[0]);
+            let p2 = convertPoint(ent.vertices[1]);
             out += `  0\nLINE\n  8\n${lName}\n 10\n${p1.x}\n 20\n${p1.y}\n 30\n${p1.z}\n 11\n${p2.x}\n 21\n${p2.y}\n 31\n${p2.z}\n`;
         } 
         else if (['LWPOLYLINE', 'POLYLINE'].includes(ent.type)) {
-            let isClosed = (ent.shape || (ent.flag & 1)) ? 1 : 0;
-            // Exportamos como LWPOLYLINE (Polígono/Polilínea 2D/3D aplanada según el estándar más compatible)
-            out += `  0\nLWPOLYLINE\n  8\n${lName}\n 90\n${ent.vertices.length}\n 70\n${isClosed}\n`;
+            // Usamos la estructura clásica POLYLINE para máxima compatibilidad con 3D y polígonos
+            let flag = 0;
+            if (ent.shape || (ent.flag & 1)) flag |= 1; // Cerrada
+            if (ent.type === 'POLYLINE' && (ent.flag & 8)) flag |= 8; // Es una Polilínea 3D
+            
+            out += `  0\nPOLYLINE\n  8\n${lName}\n 66\n1\n 70\n${flag}\n`;
             ent.vertices.forEach(v => {
-                let p = convertVertex(v);
-                out += ` 10\n${p.x}\n 20\n${p.y}\n`; // El código 38 se usa para elevación constante en LWPOLYLINE si se requiere
+                let p = convertPoint(v);
+                out += `  0\nVERTEX\n  8\n${lName}\n 10\n${p.x}\n 20\n${p.y}\n 30\n${p.z}\n`;
             });
+            out += `  0\nSEQEND\n  8\n${lName}\n`;
         } 
         else if (ent.type === 'POINT') {
-            let p = convertVertex(ent.position);
+            let p = convertPoint(ent.position);
             out += `  0\nPOINT\n  8\n${lName}\n 10\n${p.x}\n 20\n${p.y}\n 30\n${p.z}\n`;
         } 
         else if (['TEXT', 'MTEXT'].includes(ent.type)) {
             let pos = ent.startPoint || ent.position;
             if (pos) {
-                let p = convertVertex(pos);
+                let p = convertPoint(pos);
                 let clean = ent.text ? ent.text.replace(/\\P/g, " ").replace(/\\{.*?\\}/g, "").replace(/[{};]/g, "") : "";
-                out += `  0\nTEXT\n  8\n${lName}\n 10\n${p.x}\n 20\n${p.y}\n 30\n${p.z}\n 40\n${ent.textHeight || 2}\n 50\n${ent.rotation || 0}\n  1\n${clean}\n`;
+                out += `  0\nTEXT\n  8\n${lName}\n 10\n${p.x}\n 20\n${p.y}\n 30\n${p.z}\n 40\n${ent.textHeight || 1}\n 50\n${ent.rotation || 0}\n  1\n${clean}\n`;
             }
+        }
+        else if (ent.type === 'CIRCLE' || ent.type === 'ARC') {
+            let p = convertPoint(ent.center);
+            out += `  0\n${ent.type}\n  8\n${lName}\n 10\n${p.x}\n 20\n${p.y}\n 30\n${p.z}\n 40\n${ent.radius}\n`;
+            if(ent.type === 'ARC') out += ` 50\n${ent.startAngle}\n 51\n${ent.endAngle}\n`;
         }
     });
 
     out += "  0\nENDSEC\n  0\nEOF";
-    
     const blob = new Blob([out], {type: 'application/dxf'});
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `TRANSF_${targetSys.toUpperCase()}_${fName}`;
-    a.click();
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = `TRANSF_${targetSys.toUpperCase()}_${fName}`; a.click();
 }
 
 function changeLayerCol(fName, lName, newCol) {
-    fileData[fName].layers[lName].eachLayer(layer => {
-        if (layer.setStyle) layer.setStyle({ color: newCol, fillColor: newCol });
-    });
+    fileData[fName].layers[lName].eachLayer(layer => { if (layer.setStyle) layer.setStyle({ color: newCol, fillColor: newCol }); });
 }
-
-function toggleLayerMenu(fName) {
-    let el = document.getElementById(`layers-${fName}`);
-    el.style.display = (el.style.display === 'block') ? 'none' : 'block';
-}
-
-function toggleSubLayer(fName, lName) {
-    let p = fileData[fName].group; let c = fileData[fName].layers[lName];
-    p.hasLayer(c) ? p.removeLayer(c) : p.addLayer(c);
-}
-
-function removeFile(e, fName) {
-    e.stopPropagation();
-    if(fileData[fName]) { map.removeLayer(fileData[fName].group); delete fileData[fName]; updateFileListUI(); }
-}
-
+function toggleLayerMenu(fName) { let el = document.getElementById(`layers-${fName}`); el.style.display = (el.style.display === 'block') ? 'none' : 'block'; }
+function toggleSubLayer(fName, lName) { let p = fileData[fName].group; let c = fileData[fName].layers[lName]; p.hasLayer(c) ? p.removeLayer(c) : p.addLayer(c); }
+function removeFile(e, fName) { e.stopPropagation(); if(fileData[fName]) { map.removeLayer(fileData[fName].group); delete fileData[fName]; updateFileListUI(); } }
 function fitAllFilesBounds() {
     let bounds = L.latLngBounds(); let hasV = false;
     Object.values(fileData).forEach(d => { if(map.hasLayer(d.group)) { let b = d.group.getBounds(); if(b.isValid()) { bounds.extend(b); hasV = true; } } });
     if(hasV) map.fitBounds(bounds);
 }
-
 function openMeasure() {
-    document.getElementById('measurePanel').style.display = 'block';
-    const ui = document.getElementById('tiersUI'); ui.innerHTML = "";
+    document.getElementById('measurePanel').style.display = 'block'; const ui = document.getElementById('tiersUI'); ui.innerHTML = "";
     let epochCounts = {1:0, 2:0, 3:0, 4:0, 5:0};
-    [1, 2, 3, 4, 5].forEach(t => { 
-        ui.innerHTML += `<div class="tier-row" style="display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid #eee;"><span>Tol ≤ ${t}m</span><button id="bt-${t}" class="btn-plomo" style="width:80px" disabled onclick="savePt(${t})">0/10</button></div>`; 
-    });
+    [1, 2, 3, 4, 5].forEach(t => { ui.innerHTML += `<div class="tier-row" style="display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid #eee;"><span>Tol ≤ ${t}m</span><button id="bt-${t}" class="btn-plomo" style="width:80px" disabled onclick="savePt(${t})">0/10</button></div>`; });
     mWatchId = navigator.geolocation.watchPosition(p => {
         [1, 2, 3, 4, 5].forEach(t => {
             let b = document.getElementById(`bt-${t}`);
             if(p.coords.accuracy <= t && epochCounts[t] < 10) { 
                 epochCounts[t]++;
-                if(epochCounts[t] >= 10) { b.disabled = false; b.className = "btn-verde"; b.innerText = "GRABAR"; } 
-                else b.innerText = `${epochCounts[t]}/10`;
+                if(epochCounts[t] >= 10) { b.disabled = false; b.className = "btn-verde"; b.innerText = "GRABAR"; } else b.innerText = `${epochCounts[t]}/10`;
             }
         });
     }, null, {enableHighAccuracy:true});
 }
-
 function savePt(t) {
-    const name = document.getElementById('ptName').value || `P-${points.length+1}`;
-    const sys = document.getElementById('saveSys').value;
+    const name = document.getElementById('ptName').value || `P-${points.length+1}`; const sys = document.getElementById('saveSys').value;
     points.push({ name, lat: cLat, lon: cLon, alt: cAlt, acc: cAcc, sys: sys });
     L.circleMarker([cLat, cLon], {radius:6, color:'#000', fillColor:'#ff3b30', fillOpacity:1, weight:2}).addTo(mLayer);
-    document.getElementById('totalPts').innerText = points.length;
-    closeMeasure();
+    document.getElementById('totalPts').innerText = points.length; closeMeasure();
 }
-
 function closeMeasure() { document.getElementById('measurePanel').style.display = 'none'; if(mWatchId) navigator.geolocation.clearWatch(mWatchId); }
-
 function exportCSV() {
     let csv = "ID,SISTEMA,Y,X,Z,ACC\n";
     points.forEach(p => {
