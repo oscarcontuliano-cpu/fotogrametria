@@ -4,358 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <meta name="theme-color" content="#1c1c1e">
-<title>Rover Topográfico Pro - V10 GOLD</title>
-
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/dxf-parser@1.1.2/dist/dxf-parser.js"></script>
-
-<style>
-    :root { --plomo: #8e8e93; --verde: #34c759; --azul: #007aff; --fondo: #f2f2f7; }
-    body { font-family: -apple-system, sans-serif; background: var(--fondo); margin: 0; padding: 0; overflow-x: hidden; }
-    .container { max-width: 500px; margin: 0 auto; background: #fff; min-height: 100vh; padding: 15px; box-sizing: border-box; }
-    
-    /* Login */
-    #loginOverlay { position: fixed; inset: 0; background: #1c1c1e; z-index: 10000; display: flex; align-items: center; justify-content: center; }
-    .msg-box { background: #fff; padding: 25px; border-radius: 18px; text-align: center; width: 85%; }
-    
-    .card { background: #f8f8fa; border: 1px solid #e5e5ea; border-radius: 12px; padding: 15px; margin-bottom: 12px; }
-    h4 { margin: 0 0 8px 0; color: var(--plomo); text-transform: uppercase; font-size: 10px; letter-spacing: 1px; }
-    
-    input, select { width: 100%; padding: 10px; margin: 5px 0 10px 0; border: 1px solid #d1d1d6; border-radius: 8px; font-size: 14px; background: #fff; box-sizing: border-box;}
-    
-    button { width: 100%; padding: 14px; border: none; border-radius: 10px; font-weight: bold; font-size: 14px; cursor: pointer; transition: 0.2s; }
-    .btn-azul { background: var(--azul); color: #fff; }
-    .btn-verde { background: var(--verde); color: #fff; }
-    .btn-plomo { background: var(--plomo); color: #fff; }
-    .btn-rojo { background: #ff3b30; color: #fff; }
-
-    /* Mapa y Modo 3D */
-    #mapContainer { position: relative; margin-top: 15px; border-radius: 12px; overflow: hidden; border: 1px solid #ddd; height: 350px; background: #000; transition: 0.3s; perspective: 1000px; }
-    #mapContainer.expanded { height: 600px; }
-    #mapa { height: 100%; width: 100%; transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1); }
-    
-    /* Clase para inclinar el mapa (Efecto 3D) */
-    .map-3d #mapa { transform: rotateX(45deg) translateY(-50px) scale(1.2); box-shadow: 0 30px 60px rgba(0,0,0,0.5); }
-
-    .map-ctrl { position: absolute; right: 10px; z-index: 1000; background: #fff; border: none; border-radius: 50%; width: 44px; height: 44px; box-shadow: 0 2px 10px rgba(0,0,0,0.3); font-size: 20px; display: flex; align-items: center; justify-content: center; cursor: pointer; }
-    #btnRecenterGPS { top: 10px; }
-    #btnRecenterFiles { top: 60px; }
-    #btn3D { top: 110px; color: var(--azul); font-weight: bold; font-size: 14px; }
-    #btnResizeMap { top: 160px; }
-
-    .dxf-label-container { color: #fff; font-weight: bold; font-size: 11px; white-space: nowrap; text-shadow: 1px 1px 2px #000; pointer-events: none; }
-
-    /* UI de Archivos */
-    .file-card { background: #fff; border: 1px solid #ddd; border-radius: 10px; margin-bottom: 10px; }
-    .file-header { padding: 12px; display: flex; align-items: center; justify-content: space-between; background: #f1f1f1; border-radius: 10px 10px 0 0; }
-    .layer-list { padding: 10px; display: none; border-top: 1px solid #eee; }
-    
-    .export-box { padding: 12px; background: #f0f4f8; border-radius: 8px; margin-bottom: 15px; border: 1px solid #c1d1e0; }
-    .config-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 5px; }
-    .config-row label { font-size: 10px; color: #666; font-weight: bold; }
-</style>
-</head>
-<body>
-
-<div id="loginOverlay">
-    <div class="msg-box">
-        <h3>Rover Topográfico Pro</h3>
-        <input type="password" id="pass" placeholder="Contraseña">
-        <button class="btn-azul" style="margin-top:15px" onclick="checkPass()">ACCEDER</button>
-    </div>
-</div>
-
-<div class="container">
-    <div class="card">
-        <h4>1. Carga de Planos (DXF)</h4>
-        <select id="dxfSys">
-            <option value="psad">Cargar en PSAD56 UTM 19S</option>
-            <option value="local">Cargar en Sistema Local</option>
-            <option value="wgs">Cargar en WGS84 Lat/Lon</option>
-        </select>
-        <input type="file" id="file" accept=".dxf" multiple>
-        <button class="btn-azul" onclick="loadDXF()">IMPORTAR DXF</button>
-        <div id="fileListUI" style="margin-top:10px"></div>
-    </div>
-
-    <div class="card">
-        <h4>2. Control de Posición</h4>
-        <button class="btn-plomo" id="gpsBtn" onclick="toggleGPS()">🛰️ ACTIVAR GPS</button>
-        <div id="statusAcc" style="font-size: 11px; text-align: center; margin-top: 8px; font-weight: bold; color: #666;">SIN SEÑAL</div>
-    </div>
-
-    <div id="mapContainer">
-        <button class="map-ctrl" id="btnRecenterGPS" onclick="recenterGPS()" title="Mi Ubicación">⌖</button>
-        <button class="map-ctrl" id="btnRecenterFiles" onclick="fitAllFilesBounds()" title="Ver Planos">🗺️</button>
-        <button class="map-ctrl" id="btn3D" onclick="toggle3D()" title="Modo 3D">3D</button>
-        <button class="map-ctrl" id="btnResizeMap" onclick="toggleMapSize()" title="Expandir">↕</button>
-        <div id="mapa"></div>
-    </div>
-
-    <div class="card" style="margin-top:15px">
-        <h4>3. Registro de Puntos</h4>
-        <select id="saveSys">
-            <option value="psad">PSAD56</option>
-            <option value="local">Local</option>
-            <option value="wgs">WGS84</option>
-        </select>
-        <input type="text" id="ptName" placeholder="ID (ej: V-01)">
-        <button class="btn-azul" id="measureBtn" onclick="savePoint()" disabled>📍 CAPTURAR PUNTO</button>
-    </div>
-</div>
-
-<script>
-const CLAVE = "topo2026";
-let map, mLayer, posMarker = null, watchId = null;
-let cLat, cLon, cAlt = 0, cAcc, points = [];
-let fileData = {}; 
-
-const aciColors = { 1: "#FF0000", 2: "#FFFF00", 3: "#00FF00", 4: "#00FFFF", 5: "#0000FF", 6: "#FF00FF", 7: "#000000", 8: "#808080" };
-
-// Parámetros de transformación Local
-const lat0_loc=-22.36086191*Math.PI/180, lon0_loc=-68.85328566*Math.PI/180;
-const n0_loc=27601.38091, e0_loc=15295.6027, esc_loc=1.0004539155031, rot_loc=0.0642663374911*Math.PI/180;
-
-function checkPass() { if(document.getElementById('pass').value === CLAVE) { document.getElementById('loginOverlay').style.display = 'none'; initMap(); } }
-
-function initMap() {
-    map = L.map('mapa', { maxZoom: 28, zoomControl: false }).setView([-22.36, -68.85], 14);
-    const googleSat = L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', { maxNativeZoom: 21, maxZoom: 28 });
-    const esriSat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxNativeZoom: 18, maxZoom: 28 });
-    googleSat.addTo(map);
-    L.control.layers({ "Google Sat": googleSat, "Esri Sat": esriSat }, null, { position: 'bottomleft' }).addTo(map);
-    mLayer = L.featureGroup().addTo(map);
-}
-
-function toggle3D() {
-    const cont = document.getElementById('mapContainer');
-    const btn = document.getElementById('btn3D');
-    cont.classList.toggle('map-3d');
-    btn.style.backgroundColor = cont.classList.contains('map-3d') ? '#34c759' : '#fff';
-    btn.style.color = cont.classList.contains('map-3d') ? '#fff' : '#007aff';
-    setTimeout(() => map.invalidateSize(), 500);
-}
-
-function toggleMapSize() { document.getElementById('mapContainer').classList.toggle('expanded'); setTimeout(() => map.invalidateSize(), 300); }
-
-// --- Matemáticas de Transformación ---
-function psadToWgs(e, n) {
-    const a = 6378388, f = 1/297, e2 = 2*f - f*f, k0 = 0.9996, lon0 = -69 * Math.PI / 180;
-    const M = (n - 10000000) / k0, mu = M / (a * (1 - e2/4));
-    const e1 = (1 - Math.sqrt(1-e2)) / (1 + Math.sqrt(1-e2));
-    const ph = mu + (3*e1/2)*Math.sin(2*mu);
-    const n1 = a / Math.sqrt(1 - e2*Math.sin(ph)**2), r1 = a*(1-e2)/Math.pow(1-e2*Math.sin(ph)**2, 1.5);
-    const d = (e - 500000) / (n1 * k0);
-    return { lat: (ph - (n1 * Math.tan(ph) / r1) * (d**2/2)) * 180 / Math.PI + 0.0012, lon: (lon0 + d / Math.cos(ph)) * 180 / Math.PI + 0.0015 };
-}
-
-function wgsToPsad(la, lo) {
-    const l = la*Math.PI/180, ln = lo*Math.PI/180, a=6378388, e2=0.00672267, k0=0.9996, l0=-69*Math.PI/180;
-    const N = a/Math.sqrt(1-e2*Math.sin(l)**2), T=Math.pow(Math.tan(l),2), A=(ln-l0)*Math.cos(l);
-    const M = a*((1-e2/4)*l-(3*e2/8)*Math.sin(2*l));
-    return { e: 500000 + k0*N*(A+(1-T)*A**3/6), n: 10000000 + k0*(M+N*Math.tan(l)*(A**2/2)) };
-}
-
-function localToWgs(e, n) {
-    let u=(n-24876.363)/esc_loc, v=(e-9765.850)/esc_loc;
-    let ng=(u*Math.cos(rot_loc)+v*Math.sin(rot_loc))+24876.363, eg=(-u*Math.sin(rot_loc)+v*Math.cos(rot_loc))+9765.850;
-    let ph=(ng-n0_loc)/(6378137*(1-0.0033528/4))+lat0_loc, d=(eg-e0_loc)/(6378137/Math.sqrt(1-0.0066943*Math.sin(ph)**2));
-    return { lat: ph*180/Math.PI, lon: (lon0_loc+d/Math.cos(ph))*180/Math.PI };
-}
-
-function wgsToLocal(la, lo) {
-    const l=la*Math.PI/180, ln=lo*Math.PI/180;
-    let eg=e0_loc+(6378137/Math.sqrt(1-0.0066943*Math.sin(l)**2))*Math.cos(l)*(ln-lon0_loc);
-    let ng=n0_loc+6378137*(1-0.0066943/4)*(l-lat0_loc);
-    let du=(ng-24876.363)*Math.cos(-rot_loc)+(eg-9765.850)*Math.sin(-rot_loc);
-    let dv=-(ng-24876.363)*Math.sin(-rot_loc)+(eg-9765.850)*Math.cos(-rot_loc);
-    return { e:dv*esc_loc+9765.850, n:du*esc_loc+24876.363 };
-}
-
-// --- Gestión de DXF ---
-async function loadDXF() {
-    const files = document.getElementById('file').files;
-    const sys = document.getElementById('dxfSys').value;
-    if(!files.length) return;
-    for (let f of files) {
-        const reader = new FileReader();
-        reader.onload = e => {
-            try {
-                const dxf = new DxfParser().parseSync(e.target.result);
-                let mainGroup = L.featureGroup();
-                let layersData = {};
-                const dxfLayers = dxf.tables.layer.layers;
-
-                dxf.entities.forEach(ent => {
-                    let lName = ent.layer || "0";
-                    if(!layersData[lName]) layersData[lName] = { group: L.featureGroup().addTo(mainGroup), aci: dxfLayers[lName] ? dxfLayers[lName].colorIndex : 7 };
-                    let hex = aciColors[ent.colorIndex !== undefined ? ent.colorIndex : layersData[lName].aci] || "#8e8e93";
-                    
-                    if(['LINE','POLYLINE','LWPOLYLINE'].includes(ent.type)) {
-                        let pts = ent.vertices.map(v => {
-                            let w = (sys==='psad') ? psadToWgs(v.x,v.y) : (sys==='local' ? localToWgs(v.x,v.y) : {lat:v.y, lon:v.x});
-                            return [w.lat, w.lon];
-                        });
-                        if(pts.length > 1) L.polyline(pts, {color: hex, weight: 2}).addTo(layersData[lName].group);
-                    } else if (ent.type === 'POINT') {
-                        let w = (sys==='psad') ? psadToWgs(ent.position.x,ent.position.y) : (sys==='local' ? localToWgs(ent.position.x,ent.position.y) : {lat:ent.position.y, lon:ent.position.x});
-                        L.circleMarker([w.lat, w.lon], {radius:4, color: hex, fillColor:hex, fillOpacity:1}).addTo(layersData[lName].group);
-                    }
-                });
-                fileData[f.name] = { group: mainGroup, layers: layersData, originalDxf: dxf, sourceSys: sys };
-                mainGroup.addTo(map); fitAllFilesBounds(); updateFileListUI();
-            } catch(err) { alert("Error al cargar DXF"); }
-        };
-        reader.readAsText(f);
-    }
-}
-
-function updateFileListUI() {
-    const cont = document.getElementById('fileListUI'); cont.innerHTML = '';
-    Object.keys(fileData).forEach(fName => {
-        let card = document.createElement('div'); card.className = 'file-card';
-        let html = `
-            <div class="file-header" onclick="toggleLayerMenu('${fName}')">
-                <span class="file-title">📁 ${fName}</span>
-                <button class="btn-rojo" style="width:30px; height:30px; padding:0; border-radius:50%;" onclick="removeFile(event, '${fName}')">X</button>
-            </div>
-            <div id="layers-${fName}" class="layer-list">
-                <div class="export-box">
-                    <h4>CONFIGURACIÓN DE EXPORTACIÓN</h4>
-                    <label>Sistema de Destino</label>
-                    <select id="exp-sys-${fName}">
-                        <option value="psad">PSAD56 UTM 19S</option>
-                        <option value="local">Sistema Local</option>
-                        <option value="wgs">WGS84 Lat/Lon</option>
-                    </select>
-                    
-                    <div class="config-row">
-                        <div>
-                            <label>INCLUIR ELEVACIÓN</label>
-                            <select id="exp-z-on-${fName}">
-                                <option value="si">SÍ (3D)</option>
-                                <option value="no">NO (Plano)</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label>MODO DE Z</label>
-                            <select id="exp-z-mode-${fName}">
-                                <option value="orig">MANTENER ORIG.</option>
-                                <option value="trans">TRANSFORMADA</option>
-                            </select>
-                        </div>
-                    </div>
-                    <label>OFFSET Z (Offset / Geoidal)</label>
-                    <input type="number" id="exp-z-off-${fName}" value="0.00" step="0.01">
-                    
-                    <button class="btn-verde" style="margin-top:10px" onclick="exportDXF('${fName}')">DESCARGAR DXF</button>
-                </div>`;
-        
-        Object.keys(fileData[fName].layers).forEach(lName => {
-            let hex = aciColors[fileData[fName].layers[lName].aci] || "#8e8e93";
-            html += `<div class="layer-item"><label class="layer-label"><input type="checkbox" checked onchange="toggleSubLayer('${fName}', '${lName}')"><input type="color" class="color-picker" value="${hex}" onchange="changeLayerCol('${fName}', '${lName}', this.value)"><span class="layer-text">${lName}</span></label></div>`;
-        });
-        card.innerHTML = html + `</div>`; cont.appendChild(card);
-    });
-}
-
-// --- Exportación Maestra ---
-function exportDXF(fName) {
-    const data = fileData[fName];
-    const targetSys = document.getElementById(`exp-sys-${fName}`).value;
-    const includeZ = document.getElementById(`exp-z-on-${fName}`).value === 'si';
-    const zMode = document.getElementById(`exp-z-mode-${fName}`).value;
-    const zOffset = parseFloat(document.getElementById(`exp-z-off-${fName}`).value) || 0;
-    
-    const dxf = data.originalDxf;
-    let out = "  0\nSECTION\n  2\nHEADER\n  0\nENDSEC\n  0\nSECTION\n  2\nENTITIES\n";
-
-    const processPoint = (v) => {
-        let wgs = (data.sourceSys === 'psad') ? psadToWgs(v.x, v.y) : (data.sourceSys === 'local' ? localToWgs(v.x, v.y) : { lat: v.y, lon: v.x });
-        let outX, outY;
-        if (targetSys === 'psad') { let r = wgsToPsad(wgs.lat, wgs.lon); outX = r.e; outY = r.n; }
-        else if (targetSys === 'local') { let r = wgsToLocal(wgs.lat, wgs.lon); outX = r.e; outY = r.n; }
-        else { outX = wgs.lon; outY = wgs.lat; }
-        
-        let finalZ = 0;
-        if (includeZ) {
-            let baseZ = (ent.type === 'POLYLINE') ? (v.z || 0) : (ent.elevation || 0);
-            finalZ = (zMode === 'trans') ? (baseZ + zOffset) : baseZ;
-        }
-        return { x: outX, y: outY, z: finalZ };
-    };
-
-    dxf.entities.forEach(ent => {
-        let lName = ent.layer || "0";
-        if (data.layers[lName] && !data.group.hasLayer(data.layers[lName].group)) return;
-        let aci = ent.colorIndex !== undefined ? ent.colorIndex : data.layers[lName].aci;
-
-        if (ent.type === 'LINE') {
-            let p1 = processPoint(ent.vertices[0]); let p2 = processPoint(ent.vertices[1]);
-            out += `  0\nLINE\n100\nAcDbEntity\n  8\n${lName}\n 62\n${aci}\n100\nAcDbLine\n 10\n${p1.x}\n 20\n${p1.y}\n 30\n${p1.z}\n 11\n${p2.x}\n 21\n${p2.y}\n 31\n${p2.z}\n`;
-        } else if (['LWPOLYLINE', 'POLYLINE'].includes(ent.type)) {
-            let flag = (ent.shape || (ent.flag & 1)) ? 1 : 0;
-            if (includeZ) flag |= 8; // Bit 3D
-            out += `  0\nPOLYLINE\n100\nAcDbEntity\n  8\n${lName}\n 62\n${aci}\n100\nAcDb3dPolyline\n 66\n1\n 70\n${flag}\n`;
-            ent.vertices.forEach(v => {
-                let p = processPoint(v);
-                out += `  0\nVERTEX\n100\nAcDbEntity\n  8\n${lName}\n 62\n${aci}\n100\nAcDbVertex\n100\nAcDb3dPolylineVertex\n 10\n${p.x}\n 20\n${p.y}\n 30\n${p.z}\n 70\n32\n`;
-            });
-            out += `  0\nSEQEND\n  8\n${lName}\n`;
-        } else if (ent.type === 'POINT') {
-            let p = processPoint(ent.position);
-            out += `  0\nPOINT\n100\nAcDbEntity\n  8\n${lName}\n 62\n${aci}\n100\nAcDbPoint\n 10\n${p.x}\n 20\n${p.y}\n 30\n${p.z}\n`;
-        }
-    });
-
-    out += "  0\nENDSEC\n  0\nEOF";
-    const blob = new Blob([out], {type: 'application/dxf'});
-    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-    a.download = `TRANSF_${targetSys.toUpperCase()}_Z${includeZ ? '3D' : '2D'}_${fName}`; a.click();
-}
-
-// --- GPS y Registro ---
-function toggleGPS() {
-    if(!watchId) {
-        watchId = navigator.geolocation.watchPosition(p => {
-            cLat = p.coords.latitude; cLon = p.coords.longitude; cAlt = p.coords.altitude || 0; cAcc = p.coords.accuracy;
-            document.getElementById('statusAcc').innerText = `ACC: ±${cAcc.toFixed(2)}m | Z: ${cAlt.toFixed(1)}m`;
-            if(!posMarker) { posMarker = L.circleMarker([cLat, cLon], {radius:8, color:'#fff', fillColor:'#34c759', fillOpacity:1, weight:3}).addTo(map); map.setView([cLat, cLon], 21); }
-            else posMarker.setLatLng([cLat, cLon]);
-            document.getElementById('measureBtn').disabled = false;
-        }, null, {enableHighAccuracy:true});
-        document.getElementById('gpsBtn').className = "btn-verde";
-    } else { navigator.geolocation.clearWatch(watchId); watchId = null; document.getElementById('gpsBtn').className = "btn-plomo"; }
-}
-
-function savePoint() {
-    const name = document.getElementById('ptName').value || `P-${points.length+1}`;
-    points.push({ name, lat: cLat, lon: cLon, alt: cAlt });
-    L.circleMarker([cLat, cLon], {radius:6, color:'#000', fillColor:'#ff3b30', fillOpacity:1}).addTo(mLayer);
-    alert(`Punto ${name} grabado.`);
-}
-
-function recenterGPS() { if(cLat) map.setView([cLat, cLon], 21); }
-function fitAllFilesBounds() {
-    let b = L.latLngBounds(); let has = false;
-    Object.values(fileData).forEach(d => { if(map.hasLayer(d.group)) { b.extend(d.group.getBounds()); has=true; } });
-    if(has) map.fitBounds(b);
-}
-function toggleLayerMenu(fName) { let el = document.getElementById(`layers-${fName}`); el.style.display = (el.style.display==='block') ? 'none' : 'block'; }
-function toggleSubLayer(fName, lName) { let p=fileData[fName].group; let c=fileData[fName].layers[lName].group; p.hasLayer(c) ? p.removeLayer(c) : p.addLayer(c); }
-function removeFile(e, fName) { e.stopPropagation(); map.removeLayer(fileData[fName].group); delete fileData[fName]; updateFileListUI(); }
-function changeLayerCol(f, l, col) { fileData[f].layers[l].group.eachLayer(ly => { if(ly.setStyle) ly.setStyle({color:col, fillColor:col}); }); }
-</script>
-</body>
-</html>
-
-<html lang="es">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<meta name="theme-color" content="#1c1c1e">
-<title>Rover Topográfico Pro - FULL V8</title>
+<title>Rover Topográfico Pro - FULL V10 3D</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -375,13 +24,18 @@ function changeLayerCol(f, l, col) { fileData[f].layers[l].group.eachLayer(ly =>
     .btn-verde { background: var(--verde); color: #fff; }
     .btn-plomo { background: var(--plomo); color: #fff; }
     .btn-rojo { background: #ff3b30; color: #fff; }
-    #mapContainer { position: relative; margin-top: 15px; border-radius: 12px; overflow: hidden; border: 1px solid #ddd; height: 350px; background: #000; transition: height 0.3s ease; }
+    
+    #mapContainer { position: relative; margin-top: 15px; border-radius: 12px; overflow: hidden; border: 1px solid #ddd; height: 350px; background: #000; transition: height 0.3s ease; perspective: 1000px; }
     #mapContainer.expanded { height: 620px; }
-    #mapa { height: 100%; width: 100%; }
-    .map-ctrl { position: absolute; right: 10px; z-index: 1000; background: #fff; border: none; border-radius: 50%; width: 44px; height: 44px; box-shadow: 0 2px 10px rgba(0,0,0,0.3); font-size: 20px; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+    #mapa { height: 100%; width: 100%; transition: transform 0.5s ease; transform-origin: bottom center; }
+    .map-3d-view { transform: rotateX(60deg) scale(1.1); box-shadow: 0 -20px 50px rgba(0,0,0,0.5) inset; }
+    
+    .map-ctrl { position: absolute; right: 10px; z-index: 1000; background: #fff; border: none; border-radius: 50%; width: 44px; height: 44px; box-shadow: 0 2px 10px rgba(0,0,0,0.3); font-size: 20px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: 0.2s; }
     #btnRecenterGPS { top: 12px; }
     #btnRecenterFiles { top: 65px; }
     #btnResizeMap { top: 118px; color: var(--azul); }
+    #btnToggle3D { top: 171px; font-size: 16px; font-weight: bold; }
+
     .dxf-label-container { color: #fff; font-weight: bold; font-size: 12px; white-space: nowrap; text-shadow: 2px 0 0 #000, -2px 0 0 #000, 0 2px 0 #000, 0 -2px 0 #000; pointer-events: none; }
     .file-card { background: #fff; border: 1px solid #ddd; border-radius: 10px; margin-bottom: 8px; overflow: hidden; }
     .file-header { padding: 12px; display: flex; align-items: center; justify-content: space-between; background: #f1f1f1; cursor: pointer; }
@@ -452,6 +106,7 @@ function changeLayerCol(f, l, col) { fileData[f].layers[l].group.eachLayer(ly =>
         <button class="map-ctrl" id="btnRecenterGPS" onclick="recenterGPS()" title="Mi Ubicación">⌖</button>
         <button class="map-ctrl" id="btnRecenterFiles" onclick="fitAllFilesBounds()" title="Ver Planos">🗺️</button>
         <button class="map-ctrl" id="btnResizeMap" onclick="toggleMapSize()" title="Ampliar">↕</button>
+        <button class="map-ctrl" id="btnToggle3D" onclick="toggle3DView()" title="Vista 3D">3D</button>
         <div id="mapa"></div>
     </div>
 </div>
@@ -482,7 +137,7 @@ function initMap() {
     const googleSat = L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', { maxNativeZoom: 21, maxZoom: 28 });
     const esriSat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxNativeZoom: 18, maxZoom: 28, attribution: 'Esri' });
     googleSat.addTo(map);
-    L.control.layers({ "Google Sat": googleSat, "Esri World": esriSat }, null, { position: 'bottomleft' }).addTo(map);
+    L.control.layers({ "Google Sat": googleSat, "Esri Sat": esriSat }, null, { position: 'bottomleft' }).addTo(map);
     mLayer = L.featureGroup().addTo(map);
 }
 
@@ -491,6 +146,18 @@ function toggleMapSize() {
     setTimeout(() => { map.invalidateSize(); }, 350);
 }
 
+function toggle3DView() {
+    const mapa = document.getElementById('mapa');
+    const btn = document.getElementById('btnToggle3D');
+    mapa.classList.toggle('map-3d-view');
+    if (mapa.classList.contains('map-3d-view')) {
+        btn.style.background = 'var(--azul)'; btn.style.color = '#fff';
+    } else {
+        btn.style.background = '#fff'; btn.style.color = '#000';
+    }
+}
+
+// --- CONVERSIONES ---
 function psadToWgs(e, n) {
     const a = 6378388, f = 1/297, e2 = 2*f - f*f, k0 = 0.9996, lon0 = -69 * Math.PI / 180;
     const M = (n - 10000000) / k0, mu = M / (a * (1 - e2/4 - 3*e2**2/64));
@@ -596,7 +263,27 @@ function updateFileListUI() {
     const cont = document.getElementById('fileListUI'); cont.innerHTML = '';
     Object.keys(fileData).forEach(fName => {
         let card = document.createElement('div'); card.className = 'file-card';
-        let html = `<div class="file-header" onclick="toggleLayerMenu('${fName}')"><span class="file-title">📁 ${fName}</span><button class="btn-rojo" style="width:30px; height:30px; padding:0; border-radius:50%;" onclick="removeFile(event, '${fName}')">X</button></div><div id="layers-${fName}" class="layer-list"><div class="export-box"><h4 style="color:#333; font-size:9px">DESCARGAR TRANSFORMADO</h4><select id="exp-${fName}" style="padding:6px; font-size:12px; margin-bottom:5px"><option value="psad">A PSAD56 UTM 19S</option><option value="local">A Sistema Local</option><option value="wgs">A WGS84 Lat/Lon</option></select><button class="btn-verde" style="padding:10px; font-size:12px" onclick="exportTransformedDXF('${fName}')">DESCARGAR .DXF</button></div>`;
+        let html = `
+            <div class="file-header" onclick="toggleLayerMenu('${fName}')">
+                <span class="file-title">📁 ${fName}</span>
+                <button class="btn-rojo" style="width:30px; height:30px; padding:0; border-radius:50%;" onclick="removeFile(event, '${fName}')">X</button>
+            </div>
+            <div id="layers-${fName}" class="layer-list">
+                <div class="export-box">
+                    <h4 style="color:#333; font-size:9px">DESCARGAR TRANSFORMADO</h4>
+                    <select id="exp-${fName}" style="padding:6px; font-size:12px; margin-bottom:5px">
+                        <option value="psad">A PSAD56 UTM 19S</option>
+                        <option value="local">A Sistema Local</option>
+                        <option value="wgs">A WGS84 Lat/Lon</option>
+                    </select>
+                    <select id="exp-z-${fName}" style="padding:6px; font-size:12px; margin-bottom:5px">
+                        <option value="keep">Mantener elevación (Z original)</option>
+                        <option value="transform">Transformar elevación (Escala/7-Param)</option>
+                        <option value="zero">Sin elevación (Z = 0)</option>
+                    </select>
+                    <button class="btn-verde" style="padding:10px; font-size:12px" onclick="exportTransformedDXF('${fName}')">DESCARGAR .DXF</button>
+                </div>`;
+                
         Object.keys(fileData[fName].layers).forEach(lName => {
             let aci = fileData[fName].layers[lName].aci;
             let hex = aciColors[aci] || "#8e8e93";
@@ -616,10 +303,11 @@ function changeLayerCol(fName, lName, newHex) {
     });
 }
 
-// --- EXPORTACIÓN DEFINITIVA: IDENTIDAD 3D PURA ---
+// --- EXPORTACIÓN DEFINITIVA CON GESTIÓN COMPLETA DE Z ---
 function exportTransformedDXF(fName) {
     const data = fileData[fName];
     const targetSys = document.getElementById(`exp-${fName}`).value;
+    const zMode = document.getElementById(`exp-z-${fName}`).value;
     const dxf = data.originalDxf;
     const sourceSys = data.sourceSys;
 
@@ -627,11 +315,25 @@ function exportTransformedDXF(fName) {
 
     const transformCoord = (x, y, z) => {
         let wgs = (sourceSys === 'psad') ? psadToWgs(x, y) : (sourceSys === 'local' ? localToWgs(x, y) : { lat: y, lon: x });
-        let outX, outY;
+        let outX, outY, outZ = z || 0;
+        
+        // Conversión XY
         if (targetSys === 'psad') { let r = wgsToPsad(wgs.lat, wgs.lon); outX = r.e; outY = r.n; }
         else if (targetSys === 'local') { let r = wgsToLocal(wgs.lat, wgs.lon); outX = r.e; outY = r.n; }
         else { outX = wgs.lon; outY = wgs.lat; }
-        return { x: outX, y: outY, z: z || 0 };
+        
+        // Gestión de Elevación Z
+        if (zMode === 'zero') {
+            outZ = 0;
+        } else if (zMode === 'transform') {
+            // Lógica de transformación de elevación mediante factor de escala local
+            let zWgs = outZ;
+            if (sourceSys === 'local') zWgs = outZ / esc_loc;
+            if (targetSys === 'local') outZ = zWgs * esc_loc;
+            else outZ = zWgs;
+        }
+
+        return { x: outX, y: outY, z: outZ };
     };
 
     dxf.entities.forEach(ent => {
@@ -648,13 +350,12 @@ function exportTransformedDXF(fName) {
             let isClosed = (ent.shape || (ent.flag & 1)) ? 1 : 0;
             let elevGlobal = ent.elevation || 0;
             
-            // CABECERA POLYLINE 3D (Subclass marker AcDb3dPolyline + flag 8)
+            // Forzamos salida AcDb3dPolyline para proteger el 3D independientemente del sistema
             out += `  0\nPOLYLINE\n100\nAcDbEntity\n  8\n${lName}\n 62\n${aci}\n100\nAcDb3dPolyline\n 66\n1\n 10\n0.0\n 20\n0.0\n 30\n0.0\n 70\n${isClosed | 8}\n`;
             
             ent.vertices.forEach(v => {
                 let zActual = (ent.type === 'POLYLINE') ? (v.z || 0) : elevGlobal;
                 let p = transformCoord(v.x, v.y, zActual);
-                // VÉRTICE 3D (Subclass AcDb3dPolylineVertex + flag 32)
                 out += `  0\nVERTEX\n100\nAcDbEntity\n  8\n${lName}\n 62\n${aci}\n100\nAcDbVertex\n100\nAcDb3dPolylineVertex\n 10\n${p.x}\n 20\n${p.y}\n 30\n${p.z}\n 70\n32\n`;
             });
             out += `  0\nSEQEND\n100\nAcDbEntity\n  8\n${lName}\n`;
@@ -676,7 +377,7 @@ function exportTransformedDXF(fName) {
     out += "  0\nENDSEC\n  0\nEOF";
     const blob = new Blob([out], {type: 'application/dxf'});
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-    a.download = `TRANSF_FULL3D_${targetSys.toUpperCase()}_${fName}`; a.click();
+    a.download = `TRANSF_Z_${zMode.toUpperCase()}_${targetSys.toUpperCase()}_${fName}`; a.click();
 }
 
 function recenterGPS() { if(cLat) map.setView([cLat, cLon], 22); }
