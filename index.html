@@ -66,7 +66,7 @@
     .pt-header { display: flex; justify-content: space-between; font-weight: bold; color: var(--azul); border-bottom: 1px solid #f0f0f0; margin-bottom: 5px; font-size: 12px; }
     .pt-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; color: #333; }
 
-    /* EXPORTACIÓN */
+    /* SECCIÓN EXPORTAR */
     .export-box { padding: 10px; background: #eef2f7; border-radius: 8px; margin: 10px 0; border: 1px solid #d1d1d6; }
 </style>
 </head>
@@ -280,6 +280,7 @@ async function loadDXF() {
                     }
                 });
 
+                // GUARDAMOS EL DXF ORIGINAL Y EL SISTEMA DE ORIGEN PARA EXPORTACIÓN
                 fileData[fName] = { group: mainGroup, layers: layersInFile, originalDxf: dxf, sourceSys: sys };
                 mainGroup.addTo(map);
                 fitAllFilesBounds();
@@ -303,13 +304,13 @@ function updateFileListUI() {
             </div>
             <div id="layers-${fName}" class="layer-list">
                 <div class="export-box">
-                    <h4 style="color:#333; font-size:10px">EXPORTAR PLANO TRANSFORMADO</h4>
-                    <select id="exp-${fName}" style="padding:5px; font-size:12px;">
+                    <h4 style="color:#333; font-size:9px">TRANSFORMAR Y EXPORTAR</h4>
+                    <select id="exp-${fName}" style="padding:6px; font-size:12px; margin-bottom:5px">
                         <option value="psad">A PSAD56 UTM 19S</option>
                         <option value="local">A Sistema Local</option>
                         <option value="wgs">A WGS84 Lat/Lon</option>
                     </select>
-                    <button class="btn-verde" style="padding:8px; font-size:12px;" onclick="exportTransformedDXF('${fName}')">DESCARGAR .DXF</button>
+                    <button class="btn-verde" style="padding:10px; font-size:12px" onclick="exportTransformedDXF('${fName}')">DESCARGAR .DXF</button>
                 </div>
                 <hr style="border:0; border-top:1px solid #eee">`;
         
@@ -330,54 +331,59 @@ function updateFileListUI() {
     });
 }
 
-// --- NUEVA LÓGICA DE EXPORTACIÓN DXF ---
+// --- LÓGICA DE EXPORTACIÓN DXF COMPLETA ---
 function exportTransformedDXF(fName) {
     const data = fileData[fName];
     const targetSys = document.getElementById(`exp-${fName}`).value;
     const dxf = data.originalDxf;
     const sourceSys = data.sourceSys;
 
-    // Encabezado mínimo DXF
+    // Estructura mínima de un archivo DXF funcional
     let out = "  0\nSECTION\n  2\nHEADER\n  0\nENDSEC\n  0\nSECTION\n  2\nENTITIES\n";
 
     dxf.entities.forEach(ent => {
         let lName = ent.layer || "0";
-        // SIGUE LA LÓGICA DE CARGA: Solo exportar si el layer está activo en el mapa
+        // Solo exportamos lo que es visible según los layers activos en la app
         if (data.layers[lName] && !data.group.hasLayer(data.layers[lName])) return;
 
         const convert = (x, y) => {
-            // 1. Transformar origen -> WGS84
             let wgs = (sourceSys === 'psad') ? psadToWgs(x, y) : (sourceSys === 'local' ? localToWgs(x, y) : { lat: y, lon: x });
-            // 2. Transformar WGS84 -> Destino elegido
             if (targetSys === 'psad') { let r = wgsToPsad(wgs.lat, wgs.lon); return { x: r.e, y: r.n }; }
             if (targetSys === 'local') { let r = wgsToLocal(wgs.lat, wgs.lon); return { x: r.e, y: r.n }; }
             return { x: wgs.lon, y: wgs.lat };
         };
 
+        // EXPORTAR LÍNEAS, POLILÍNEAS 2D/3D Y POLÍGONOS
         if (['LINE', 'LWPOLYLINE', 'POLYLINE'].includes(ent.type)) {
-            out += `  0\n${ent.type === 'LINE' ? 'LINE' : 'LWPOLYLINE'}\n  8\n${lName}\n`;
-            if (ent.type !== 'LINE') out += ` 90\n${ent.vertices.length}\n 70\n${ent.shape ? 1 : 0}\n`;
+            // Código 70 controla si la polilínea es cerrada (Polígono)
+            const isClosed = (ent.shape || (ent.flag & 1)) ? 1 : 0;
             
-            ent.vertices.forEach((v, i) => {
-                let p = convert(v.x, v.y);
-                let codeX = (ent.type === 'LINE' && i === 1) ? 11 : 10;
-                let codeY = (ent.type === 'LINE' && i === 1) ? 21 : 20;
-                out += ` ${codeX}\n${p.x}\n ${codeY}\n${p.y}\n`;
-            });
-        } else if (ent.type === 'POINT') {
+            if (ent.type === 'LINE') {
+                let p1 = convert(ent.vertices[0].x, ent.vertices[0].y);
+                let p2 = convert(ent.vertices[1].x, ent.vertices[1].y);
+                out += `  0\nLINE\n  8\n${lName}\n 10\n${p1.x}\n 20\n${p1.y}\n 30\n${ent.vertices[0].z || 0}\n 11\n${p2.x}\n 21\n${p2.y}\n 31\n${ent.vertices[1].z || 0}\n`;
+            } else {
+                // Exportamos como LWPOLYLINE por compatibilidad universal
+                out += `  0\nLWPOLYLINE\n  8\n${lName}\n 90\n${ent.vertices.length}\n 70\n${isClosed}\n`;
+                ent.vertices.forEach(v => {
+                    let p = convert(v.x, v.y);
+                    out += ` 10\n${p.x}\n 20\n${p.y}\n 30\n${v.z || 0}\n`;
+                });
+            }
+        } 
+        // EXPORTAR PUNTOS
+        else if (ent.type === 'POINT') {
             let p = convert(ent.position.x, ent.position.y);
-            out += `  0\nPOINT\n  8\n${lName}\n 10\n${p.x}\n 20\n${p.y}\n`;
-        } else if (['TEXT', 'MTEXT'].includes(ent.type)) {
+            out += `  0\nPOINT\n  8\n${lName}\n 10\n${p.x}\n 20\n${p.y}\n 30\n${ent.position.z || 0}\n`;
+        } 
+        // EXPORTAR TEXTOS
+        else if (['TEXT', 'MTEXT'].includes(ent.type)) {
             let pos = ent.startPoint || ent.position;
             if (pos) {
                 let p = convert(pos.x, pos.y);
-                let clean = ent.text.replace(/\\P/g, " ").replace(/\\{.*?\\}/g, "").replace(/[{};]/g, "");
-                out += `  0\nTEXT\n  8\n${lName}\n 10\n${p.x}\n 20\n${p.y}\n 40\n${ent.textHeight || 2}\n  1\n${clean}\n`;
+                let clean = ent.text ? ent.text.replace(/\\P/g, " ").replace(/\\{.*?\\}/g, "").replace(/[{};]/g, "") : "";
+                out += `  0\nTEXT\n  8\n${lName}\n 10\n${p.x}\n 20\n${p.y}\n 30\n${pos.z || 0}\n 40\n${ent.textHeight || 2}\n 50\n${ent.rotation || 0}\n  1\n${clean}\n`;
             }
-        } else if (ent.type === 'CIRCLE' || ent.type === 'ARC') {
-            let p = convert(ent.center.x, ent.center.y);
-            out += `  0\n${ent.type}\n  8\n${lName}\n 10\n${p.x}\n 20\n${p.y}\n 40\n${ent.radius}\n`;
-            if(ent.type === 'ARC') out += ` 50\n${ent.startAngle}\n 51\n${ent.endAngle}\n`;
         }
     });
 
@@ -386,7 +392,7 @@ function exportTransformedDXF(fName) {
     const blob = new Blob([out], {type: 'application/dxf'});
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `PLANTO_TRANSF_${targetSys.toUpperCase()}_${fName}`;
+    a.download = `TRANSF_${targetSys.toUpperCase()}_${fName}`;
     a.click();
 }
 
