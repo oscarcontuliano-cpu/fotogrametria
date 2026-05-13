@@ -66,9 +66,8 @@
     .pt-header { display: flex; justify-content: space-between; font-weight: bold; color: var(--azul); border-bottom: 1px solid #f0f0f0; margin-bottom: 5px; font-size: 12px; }
     .pt-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; color: #333; }
 
-    /* ESTILOS EXPORTACION */
-    .export-box { padding: 10px; background: #eef2f7; border-radius: 8px; margin: 10px 0; }
-    .export-box select { padding: 8px; font-size: 12px; margin-bottom: 5px; }
+    /* EXPORTACIÓN */
+    .export-box { padding: 10px; background: #eef2f7; border-radius: 8px; margin: 10px 0; border: 1px solid #d1d1d6; }
 </style>
 </head>
 <body>
@@ -304,15 +303,15 @@ function updateFileListUI() {
             </div>
             <div id="layers-${fName}" class="layer-list">
                 <div class="export-box">
-                    <h4 style="color:#000">Transformar y Exportar</h4>
-                    <select id="exportSys-${fName}">
-                        <option value="psad">Exportar a PSAD56 UTM 19S</option>
-                        <option value="local">Exportar a Sistema Local</option>
-                        <option value="wgs">Exportar a WGS84 Lat/Lon</option>
+                    <h4 style="color:#333; font-size:10px">EXPORTAR PLANO TRANSFORMADO</h4>
+                    <select id="exp-${fName}" style="padding:5px; font-size:12px;">
+                        <option value="psad">A PSAD56 UTM 19S</option>
+                        <option value="local">A Sistema Local</option>
+                        <option value="wgs">A WGS84 Lat/Lon</option>
                     </select>
-                    <button class="btn-verde" onclick="exportTransformedDXF('${fName}')">DESCARGAR DXF</button>
+                    <button class="btn-verde" style="padding:8px; font-size:12px;" onclick="exportTransformedDXF('${fName}')">DESCARGAR .DXF</button>
                 </div>
-                <hr>`;
+                <hr style="border:0; border-top:1px solid #eee">`;
         
         Object.keys(fileData[fName].layers).forEach(lName => {
             let col = getRandomColor(lName);
@@ -331,52 +330,63 @@ function updateFileListUI() {
     });
 }
 
-// --- LOGICA DE EXPORTACIÓN DXF ---
+// --- NUEVA LÓGICA DE EXPORTACIÓN DXF ---
 function exportTransformedDXF(fName) {
     const data = fileData[fName];
-    const targetSys = document.getElementById(`exportSys-${fName}`).value;
+    const targetSys = document.getElementById(`exp-${fName}`).value;
     const dxf = data.originalDxf;
     const sourceSys = data.sourceSys;
 
-    let dxfContent = "  0\nSECTION\n  2\nHEADER\n  0\nENDSEC\n  0\nSECTION\n  2\nENTITIES\n";
+    // Encabezado mínimo DXF
+    let out = "  0\nSECTION\n  2\nHEADER\n  0\nENDSEC\n  0\nSECTION\n  2\nENTITIES\n";
 
     dxf.entities.forEach(ent => {
+        let lName = ent.layer || "0";
+        // SIGUE LA LÓGICA DE CARGA: Solo exportar si el layer está activo en el mapa
+        if (data.layers[lName] && !data.group.hasLayer(data.layers[lName])) return;
+
         const convert = (x, y) => {
-            // 1. A WGS84 primero
+            // 1. Transformar origen -> WGS84
             let wgs = (sourceSys === 'psad') ? psadToWgs(x, y) : (sourceSys === 'local' ? localToWgs(x, y) : { lat: y, lon: x });
-            // 2. Al destino
+            // 2. Transformar WGS84 -> Destino elegido
             if (targetSys === 'psad') { let r = wgsToPsad(wgs.lat, wgs.lon); return { x: r.e, y: r.n }; }
             if (targetSys === 'local') { let r = wgsToLocal(wgs.lat, wgs.lon); return { x: r.e, y: r.n }; }
             return { x: wgs.lon, y: wgs.lat };
         };
 
-        if (ent.type === 'LINE') {
-            let p1 = convert(ent.vertices[0].x, ent.vertices[0].y);
-            let p2 = convert(ent.vertices[1].x, ent.vertices[1].y);
-            dxfContent += `  0\nLINE\n  8\n${ent.layer}\n 10\n${p1.x}\n 20\n${p1.y}\n 11\n${p2.x}\n 21\n${p2.y}\n`;
-        } else if (ent.type === 'LWPOLYLINE' || ent.type === 'POLYLINE') {
-            dxfContent += `  0\nLWPOLYLINE\n  8\n${ent.layer}\n 90\n${ent.vertices.length}\n 70\n${ent.shape ? 1 : 0}\n`;
-            ent.vertices.forEach(v => {
+        if (['LINE', 'LWPOLYLINE', 'POLYLINE'].includes(ent.type)) {
+            out += `  0\n${ent.type === 'LINE' ? 'LINE' : 'LWPOLYLINE'}\n  8\n${lName}\n`;
+            if (ent.type !== 'LINE') out += ` 90\n${ent.vertices.length}\n 70\n${ent.shape ? 1 : 0}\n`;
+            
+            ent.vertices.forEach((v, i) => {
                 let p = convert(v.x, v.y);
-                dxfContent += ` 10\n${p.x}\n 20\n${p.y}\n`;
+                let codeX = (ent.type === 'LINE' && i === 1) ? 11 : 10;
+                let codeY = (ent.type === 'LINE' && i === 1) ? 21 : 20;
+                out += ` ${codeX}\n${p.x}\n ${codeY}\n${p.y}\n`;
             });
         } else if (ent.type === 'POINT') {
             let p = convert(ent.position.x, ent.position.y);
-            dxfContent += `  0\nPOINT\n  8\n${ent.layer}\n 10\n${p.x}\n 20\n${p.y}\n`;
-        } else if (ent.type === 'TEXT' || ent.type === 'MTEXT') {
+            out += `  0\nPOINT\n  8\n${lName}\n 10\n${p.x}\n 20\n${p.y}\n`;
+        } else if (['TEXT', 'MTEXT'].includes(ent.type)) {
             let pos = ent.startPoint || ent.position;
-            let p = convert(pos.x, pos.y);
-            let txt = ent.text.replace(/\n/g, " ");
-            dxfContent += `  0\nTEXT\n  8\n${ent.layer}\n 10\n${p.x}\n 20\n${p.y}\n 40\n${ent.textHeight || 1}\n  1\n${txt}\n`;
+            if (pos) {
+                let p = convert(pos.x, pos.y);
+                let clean = ent.text.replace(/\\P/g, " ").replace(/\\{.*?\\}/g, "").replace(/[{};]/g, "");
+                out += `  0\nTEXT\n  8\n${lName}\n 10\n${p.x}\n 20\n${p.y}\n 40\n${ent.textHeight || 2}\n  1\n${clean}\n`;
+            }
+        } else if (ent.type === 'CIRCLE' || ent.type === 'ARC') {
+            let p = convert(ent.center.x, ent.center.y);
+            out += `  0\n${ent.type}\n  8\n${lName}\n 10\n${p.x}\n 20\n${p.y}\n 40\n${ent.radius}\n`;
+            if(ent.type === 'ARC') out += ` 50\n${ent.startAngle}\n 51\n${ent.endAngle}\n`;
         }
     });
 
-    dxfContent += "  0\nENDSEC\n  0\nEOF";
+    out += "  0\nENDSEC\n  0\nEOF";
     
-    const blob = new Blob([dxfContent], { type: 'application/dxf' });
+    const blob = new Blob([out], {type: 'application/dxf'});
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `TRANSFORMADO_${targetSys.toUpperCase()}_${fName}`;
+    a.download = `PLANTO_TRANSF_${targetSys.toUpperCase()}_${fName}`;
     a.click();
 }
 
