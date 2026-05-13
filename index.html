@@ -130,9 +130,8 @@ function initMap() {
     map = L.map('mapa', { maxZoom: 28, zoomControl: false }).setView([-22.36, -68.85], 14);
     const googleSat = L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', { maxNativeZoom: 21, maxZoom: 28 });
     const esriSat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxNativeZoom: 18, maxZoom: 28, attribution: 'Esri' });
-    
     googleSat.addTo(map);
-    L.control.layers({ "Google Sat": googleSat, "Esri Sat": esriSat }, null, { position: 'bottomleft' }).addTo(map);
+    L.control.layers({ "Google Sat": googleSat, "Esri World": esriSat }, null, { position: 'bottomleft' }).addTo(map);
     mLayer = L.featureGroup().addTo(map);
 }
 
@@ -260,14 +259,13 @@ function updateFileListUI() {
 function changeLayerCol(fName, lName, newHex) {
     fileData[fName].layers[lName].group.eachLayer(layer => {
         if (layer.setStyle) layer.setStyle({ color: newHex, fillColor: newHex });
-        if (layer.options && layer.options.icon) {
-            let div = layer.getElement().querySelector('div');
-            if (div) div.style.color = newHex;
+        if (layer.getElement && layer.getElement().querySelector('div')) {
+            layer.getElement().querySelector('div').style.color = newHex;
         }
     });
 }
 
-// --- EXPORTACIÓN CORREGIDA CON COTA 3D (BIT 8 ACTIVADO) ---
+// --- EXPORTACIÓN DEFINITIVA: IDENTIDAD 3D PURA ---
 function exportTransformedDXF(fName) {
     const data = fileData[fName];
     const targetSys = document.getElementById(`exp-${fName}`).value;
@@ -288,39 +286,38 @@ function exportTransformedDXF(fName) {
     dxf.entities.forEach(ent => {
         let lName = ent.layer || "0";
         if (data.layers[lName] && !data.group.hasLayer(data.layers[lName].group)) return;
-        
         let aci = ent.colorIndex !== undefined ? ent.colorIndex : (data.layers[lName] ? data.layers[lName].aci : 7);
 
         if (ent.type === 'LINE') {
             let p1 = transformCoord(ent.vertices[0].x, ent.vertices[0].y, ent.vertices[0].z);
             let p2 = transformCoord(ent.vertices[1].x, ent.vertices[1].y, ent.vertices[1].z);
-            out += `  0\nLINE\n  8\n${lName}\n 62\n${aci}\n 10\n${p1.x}\n 20\n${p1.y}\n 30\n${p1.z}\n 11\n${p2.x}\n 21\n${p2.y}\n 31\n${p2.z}\n`;
+            out += `  0\nLINE\n100\nAcDbEntity\n  8\n${lName}\n 62\n${aci}\n100\nAcDbLine\n 10\n${p1.x}\n 20\n${p1.y}\n 30\n${p1.z}\n 11\n${p2.x}\n 21\n${p2.y}\n 31\n${p2.z}\n`;
         } 
         else if (['LWPOLYLINE', 'POLYLINE'].includes(ent.type)) {
             let isClosed = (ent.shape || (ent.flag & 1)) ? 1 : 0;
             let elevGlobal = ent.elevation || 0;
             
-            // CRÍTICO: Activar Bit 8 (valor 8) en Flag 70 para que el CAD vea la polilínea como 3D
-            let flag = isClosed | 8; 
-
-            out += `  0\nPOLYLINE\n  8\n${lName}\n 62\n${aci}\n 66\n1\n 70\n${flag}\n`;
+            // CABECERA POLYLINE 3D (Subclass marker AcDb3dPolyline + flag 8)
+            out += `  0\nPOLYLINE\n100\nAcDbEntity\n  8\n${lName}\n 62\n${aci}\n100\nAcDb3dPolyline\n 66\n1\n 10\n0.0\n 20\n0.0\n 30\n0.0\n 70\n${isClosed | 8}\n`;
+            
             ent.vertices.forEach(v => {
                 let zActual = (ent.type === 'POLYLINE') ? (v.z || 0) : elevGlobal;
                 let p = transformCoord(v.x, v.y, zActual);
-                out += `  0\nVERTEX\n  8\n${lName}\n 10\n${p.x}\n 20\n${p.y}\n 30\n${p.z}\n`;
+                // VÉRTICE 3D (Subclass AcDb3dPolylineVertex + flag 32)
+                out += `  0\nVERTEX\n100\nAcDbEntity\n  8\n${lName}\n 62\n${aci}\n100\nAcDbVertex\n100\nAcDb3dPolylineVertex\n 10\n${p.x}\n 20\n${p.y}\n 30\n${p.z}\n 70\n32\n`;
             });
-            out += `  0\nSEQEND\n  8\n${lName}\n`;
+            out += `  0\nSEQEND\n100\nAcDbEntity\n  8\n${lName}\n`;
         } 
         else if (ent.type === 'POINT') {
             let p = transformCoord(ent.position.x, ent.position.y, ent.position.z);
-            out += `  0\nPOINT\n  8\n${lName}\n 62\n${aci}\n 10\n${p.x}\n 20\n${p.y}\n 30\n${p.z}\n`;
+            out += `  0\nPOINT\n100\nAcDbEntity\n  8\n${lName}\n 62\n${aci}\n100\nAcDbPoint\n 10\n${p.x}\n 20\n${p.y}\n 30\n${p.z}\n`;
         } 
         else if (['TEXT', 'MTEXT'].includes(ent.type)) {
             let pos = ent.startPoint || ent.position;
             if (pos) {
                 let p = transformCoord(pos.x, pos.y, pos.z);
                 let clean = ent.text ? ent.text.replace(/\\P/g, " ").replace(/\\{.*?\\}/g, "").replace(/[{};]/g, "") : "";
-                out += `  0\nTEXT\n  8\n${lName}\n 62\n${aci}\n 10\n${p.x}\n 20\n${p.y}\n 30\n${p.z}\n 40\n${ent.textHeight || 1}\n 50\n${ent.rotation || 0}\n  1\n${clean}\n`;
+                out += `  0\nTEXT\n100\nAcDbEntity\n  8\n${lName}\n 62\n${aci}\n100\nAcDbText\n 10\n${p.x}\n 20\n${p.y}\n 30\n${p.z}\n 40\n${ent.textHeight || 1}\n  1\n${clean}\n`;
             }
         }
     });
@@ -328,7 +325,7 @@ function exportTransformedDXF(fName) {
     out += "  0\nENDSEC\n  0\nEOF";
     const blob = new Blob([out], {type: 'application/dxf'});
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-    a.download = `TRANSF_${targetSys.toUpperCase()}_${fName}`; a.click();
+    a.download = `TRANSF_FULL3D_${targetSys.toUpperCase()}_${fName}`; a.click();
 }
 
 function recenterGPS() { if(cLat) map.setView([cLat, cLon], 22); }
