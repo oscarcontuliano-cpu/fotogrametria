@@ -64,6 +64,7 @@
         <h4>1. Carga de Planos (DXF)</h4>
         <select id="dxfSys">
             <option value="psad">Cargar en PSAD56 UTM 19S</option>
+            <option value="wgs_utm19s">Cargar en WGS84 UTM 19S</option>
             <option value="local">Cargar en Sistema Local</option>
             <option value="wgs">Cargar en WGS84 Lat/Lon</option>
         </select>
@@ -86,8 +87,9 @@
         </div>
         <select id="saveSys">
             <option value="psad">Grabar como PSAD56</option>
+            <option value="wgs_utm19s">Grabar como WGS84 UTM 19S</option>
             <option value="local">Grabar como Local</option>
-            <option value="wgs">Grabar como WGS84</option>
+            <option value="wgs">Grabar como WGS84 (Lat/Lon)</option>
         </select>
         <input type="text" id="ptName" placeholder="ID del punto (ej: V-01)">
         <button class="btn-azul" id="measureBtn" onclick="openMeasure()" disabled>📍 CAPTURAR PUNTO</button>
@@ -158,6 +160,7 @@ function toggle3DView() {
 }
 
 // --- CONVERSIONES ---
+// PSAD56 UTM 19S a WGS84 Lat/Lon
 function psadToWgs(e, n) {
     const a = 6378388, f = 1/297, e2 = 2*f - f*f, k0 = 0.9996, lon0 = -69 * Math.PI / 180;
     const M = (n - 10000000) / k0, mu = M / (a * (1 - e2/4 - 3*e2**2/64));
@@ -168,6 +171,7 @@ function psadToWgs(e, n) {
     return { lat: (ph - (n1 * Math.tan(ph) / r1) * (d**2/2)) * 180 / Math.PI + 0.0012, lon: (lon0 + d / Math.cos(ph)) * 180 / Math.PI + 0.0015 };
 }
 
+// WGS84 Lat/Lon a PSAD56 UTM 19S
 function wgsToPsad(la, lo) {
     const l = la*Math.PI/180, ln = lo*Math.PI/180, a=6378388, e2=0.00672267, k0=0.9996, l0=-69*Math.PI/180;
     const N = a/Math.sqrt(1-e2*Math.sin(l)**2), T=Math.pow(Math.tan(l),2), C=(e2/(1-e2))*Math.pow(Math.cos(l),2), A=(ln-l0)*Math.cos(l);
@@ -175,6 +179,26 @@ function wgsToPsad(la, lo) {
     return { e: 500000 + k0*N*(A+(1-T+C)*A**3/6), n: 10000000 + k0*(M+N*Math.tan(l)*(A**2/2)) };
 }
 
+// WGS84 UTM 19S a WGS84 Lat/Lon
+function utm19sToWgs(e, n) {
+    const a = 6378137.0, f = 1/298.257223563, e2 = 2*f - f*f, k0 = 0.9996, lon0 = -69 * Math.PI / 180;
+    const M = (n - 10000000) / k0, mu = M / (a * (1 - e2/4 - 3*e2**2/64));
+    const e1 = (1 - Math.sqrt(1 - e2)) / (1 + Math.sqrt(1 - e2));
+    const ph = mu + (3*e1/2 - 27*e1**3/32)*Math.sin(2*mu);
+    const n1 = a / Math.sqrt(1 - e2*Math.sin(ph)**2), r1 = a*(1-e2)/Math.pow(1-e2*Math.sin(ph)**2, 1.5);
+    const d = (e - 500000) / (n1 * k0);
+    return { lat: (ph - (n1 * Math.tan(ph) / r1) * (d**2/2)) * 180 / Math.PI, lon: (lon0 + d / Math.cos(ph)) * 180 / Math.PI };
+}
+
+// WGS84 Lat/Lon a WGS84 UTM 19S
+function wgsToUtm19s(la, lo) {
+    const l = la*Math.PI/180, ln = lo*Math.PI/180, a=6378137.0, f=1/298.257223563, e2=2*f - f*f, k0=0.9996, l0=-69*Math.PI/180;
+    const N = a/Math.sqrt(1-e2*Math.sin(l)**2), T=Math.pow(Math.tan(l),2), C=(e2/(1-e2))*Math.pow(Math.cos(l),2), A=(ln-l0)*Math.cos(l);
+    const M = a*((1-e2/4-3*e2**2/64)*l-(3*e2/8+3*e2**2/32)*Math.sin(2*l));
+    return { e: 500000 + k0*N*(A+(1-T+C)*A**3/6), n: 10000000 + k0*(M+N*Math.tan(l)*(A**2/2)) };
+}
+
+// WGS84 Lat/Lon a Sistema Local
 function wgsToLocal(la, lo) {
     const l=la*Math.PI/180, ln=lo*Math.PI/180;
     let eg=e0_loc+(6378137/Math.sqrt(1-0.0066943*Math.sin(l)**2))*Math.cos(l)*(ln-lon0_loc);
@@ -184,6 +208,7 @@ function wgsToLocal(la, lo) {
     return { e:dv*esc_loc+9765.850, n:du*esc_loc+24876.363 };
 }
 
+// Sistema Local a WGS84 Lat/Lon
 function localToWgs(e, n) {
     let u=(n-24876.3631-4.9352)/esc_loc, v=(e-9765.8504-(-5.6928))/esc_loc;
     let ng=(u*Math.cos(rot_loc)+v*Math.sin(rot_loc))+24876.3631, eg=(-u*Math.sin(rot_loc)+v*Math.cos(rot_loc))+9765.8504;
@@ -235,17 +260,17 @@ async function loadDXF() {
                     
                     if(['LINE','POLYLINE','LWPOLYLINE'].includes(ent.type)) {
                         let pts = ent.vertices.map(v => {
-                            let coords = (sys==='psad') ? psadToWgs(v.x,v.y) : (sys==='local' ? localToWgs(v.x,v.y) : {lat:v.y, lon:v.x});
+                            let coords = (sys==='psad') ? psadToWgs(v.x,v.y) : (sys==='local' ? localToWgs(v.x,v.y) : (sys==='wgs_utm19s' ? utm19sToWgs(v.x, v.y) : {lat:v.y, lon:v.x}));
                             return [coords.lat, coords.lon];
                         });
                         if(pts.length > 1) L.polyline(pts, {color: hex, weight: 2}).addTo(layersData[lName].group);
                     } else if (ent.type === 'POINT') {
-                        let w = (sys==='psad') ? psadToWgs(ent.position.x,ent.position.y) : (sys==='local' ? localToWgs(ent.position.x,ent.position.y) : {lat:ent.position.y, lon:ent.position.x});
+                        let w = (sys==='psad') ? psadToWgs(ent.position.x,ent.position.y) : (sys==='local' ? localToWgs(ent.position.x,ent.position.y) : (sys==='wgs_utm19s' ? utm19sToWgs(ent.position.x, ent.position.y) : {lat:ent.position.y, lon:ent.position.x}));
                         L.circleMarker([w.lat, w.lon], {radius:4, color: hex, fillColor:hex, fillOpacity:1}).addTo(layersData[lName].group);
                     } else if (['TEXT','MTEXT'].includes(ent.type)) {
                         let pos = ent.startPoint || ent.position;
                         if(pos) {
-                            let w = (sys==='psad') ? psadToWgs(pos.x,pos.y) : (sys==='local' ? localToWgs(pos.x,pos.y) : {lat:pos.y, lon:pos.x});
+                            let w = (sys==='psad') ? psadToWgs(pos.x,pos.y) : (sys==='local' ? localToWgs(pos.x,pos.y) : (sys==='wgs_utm19s' ? utm19sToWgs(pos.x, pos.y) : {lat:pos.y, lon:pos.x}));
                             let cleanTxt = ent.text ? ent.text.replace(/\\P/g, " ").replace(/\\{.*?\\}/g, "").replace(/[{};]/g, "") : "";
                             L.marker([w.lat, w.lon], { icon: L.divIcon({ className: 'dxf-label-container', html: `<div style="color:${hex}">${cleanTxt}</div>`, iconAnchor: [0, 0] }) }).addTo(layersData[lName].group);
                         }
@@ -273,6 +298,7 @@ function updateFileListUI() {
                     <h4 style="color:#333; font-size:9px">DESCARGAR TRANSFORMADO</h4>
                     <select id="exp-${fName}" style="padding:6px; font-size:12px; margin-bottom:5px">
                         <option value="psad">A PSAD56 UTM 19S</option>
+                        <option value="wgs_utm19s">A WGS84 UTM 19S</option>
                         <option value="local">A Sistema Local</option>
                         <option value="wgs">A WGS84 Lat/Lon</option>
                     </select>
@@ -314,19 +340,19 @@ function exportTransformedDXF(fName) {
     let out = "  0\nSECTION\n  2\nHEADER\n  0\nENDSEC\n  0\nSECTION\n  2\nENTITIES\n";
 
     const transformCoord = (x, y, z) => {
-        let wgs = (sourceSys === 'psad') ? psadToWgs(x, y) : (sourceSys === 'local' ? localToWgs(x, y) : { lat: y, lon: x });
+        let wgs = (sourceSys === 'psad') ? psadToWgs(x, y) : (sourceSys === 'local' ? localToWgs(x, y) : (sourceSys === 'wgs_utm19s' ? utm19sToWgs(x, y) : { lat: y, lon: x }));
         let outX, outY, outZ = z || 0;
         
         // Conversión XY
         if (targetSys === 'psad') { let r = wgsToPsad(wgs.lat, wgs.lon); outX = r.e; outY = r.n; }
         else if (targetSys === 'local') { let r = wgsToLocal(wgs.lat, wgs.lon); outX = r.e; outY = r.n; }
+        else if (targetSys === 'wgs_utm19s') { let r = wgsToUtm19s(wgs.lat, wgs.lon); outX = r.e; outY = r.n; }
         else { outX = wgs.lon; outY = wgs.lat; }
         
         // Gestión de Elevación Z
         if (zMode === 'zero') {
             outZ = 0;
         } else if (zMode === 'transform') {
-            // Lógica de transformación de elevación mediante factor de escala local
             let zWgs = outZ;
             if (sourceSys === 'local') zWgs = outZ / esc_loc;
             if (targetSys === 'local') outZ = zWgs * esc_loc;
@@ -350,7 +376,6 @@ function exportTransformedDXF(fName) {
             let isClosed = (ent.shape || (ent.flag & 1)) ? 1 : 0;
             let elevGlobal = ent.elevation || 0;
             
-            // Forzamos salida AcDb3dPolyline para proteger el 3D independientemente del sistema
             out += `  0\nPOLYLINE\n100\nAcDbEntity\n  8\n${lName}\n 62\n${aci}\n100\nAcDb3dPolyline\n 66\n1\n 10\n0.0\n 20\n0.0\n 30\n0.0\n 70\n${isClosed | 8}\n`;
             
             ent.vertices.forEach(v => {
@@ -413,7 +438,7 @@ function closeMeasure() { document.getElementById('measurePanel').style.display 
 function exportCSV() {
     let csv = "ID,SISTEMA,Y,X,Z,ACC\n";
     points.forEach(p => {
-        let coord = (p.sys === 'psad') ? wgsToPsad(p.lat, p.lon) : (p.sys === 'local' ? wgsToLocal(p.lat, p.lon) : {e: p.lon, n: p.lat});
+        let coord = (p.sys === 'psad') ? wgsToPsad(p.lat, p.lon) : (p.sys === 'local' ? wgsToLocal(p.lat, p.lon) : (p.sys === 'wgs_utm19s' ? wgsToUtm19s(p.lat, p.lon) : {e: p.lon, n: p.lat}));
         csv += `${p.name},${p.sys},${coord.n.toFixed(3)},${coord.e.toFixed(3)},${p.alt.toFixed(3)},${p.acc.toFixed(2)}\n`;
     });
     const blob = new Blob([csv], {type:'text/csv'});
