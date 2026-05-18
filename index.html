@@ -124,8 +124,24 @@ const aciColors = {
     6: "#FF00FF", 7: "#FFFFFF", 8: "#808080", 9: "#C0C0C0"
 };
 
-const lat0_loc=-22.36086191*Math.PI/180, lon0_loc=-68.85328566*Math.PI/180;
-const n0_loc=27601.38091, e0_loc=15295.6027, esc_loc=1.0004539155031, rot_loc=0.0642663374911*Math.PI/180;
+// --- PARÁMETROS EXACTOS DEL ARCHIVO .DC ---
+// Línea 64TM (Orígenes)
+const lat0_loc = -22.36086191 * Math.PI / 180;
+const lon0_loc = -68.85328566 * Math.PI / 180;
+const n0_loc = 27601.38091;
+const e0_loc = 15295.6027;
+
+// Línea 50TM (Calibración / Transformación)
+const grid_n = 24876.3631721270;
+const grid_e = 9765.85040003050;
+const shift_n = 4.93525917778920;
+const shift_e = -5.69285485662950;
+const rot_loc = 0.06426633749110 * Math.PI / 180;
+const esc_loc = 1.00045391550310;
+
+// Constantes de elipsoide (WGS84)
+const a_ellip = 6378137.0;
+const e2_ellip = 0.00669437999014;
 
 function checkPass() {
     if(document.getElementById('pass').value === CLAVE) {
@@ -160,6 +176,7 @@ function toggle3DView() {
 }
 
 // --- CONVERSIONES ---
+
 // PSAD56 UTM 19S a WGS84 Lat/Lon
 function psadToWgs(e, n) {
     const a = 6378388, f = 1/297, e2 = 2*f - f*f, k0 = 0.9996, lon0 = -69 * Math.PI / 180;
@@ -198,22 +215,50 @@ function wgsToUtm19s(la, lo) {
     return { e: 500000 + k0*N*(A+(1-T+C)*A**3/6), n: 10000000 + k0*(M+N*Math.tan(l)*(A**2/2)) };
 }
 
-// WGS84 Lat/Lon a Sistema Local
+// WGS84 Lat/Lon a Sistema Local CORREGIDO (basado en archivo .dc)
 function wgsToLocal(la, lo) {
-    const l=la*Math.PI/180, ln=lo*Math.PI/180;
-    let eg=e0_loc+(6378137/Math.sqrt(1-0.0066943*Math.sin(l)**2))*Math.cos(l)*(ln-lon0_loc);
-    let ng=n0_loc+6378137*(1-0.0066943/4)*(l-lat0_loc);
-    let du=(ng-24876.363)*Math.cos(-rot_loc)+(eg-9765.850)*Math.sin(-rot_loc);
-    let dv=-(ng-24876.363)*Math.sin(-rot_loc)+(eg-9765.850)*Math.cos(-rot_loc);
-    return { e:dv*esc_loc+9765.850, n:du*esc_loc+24876.363 };
+    const l = la * Math.PI / 180;
+    const ln = lo * Math.PI / 180;
+    
+    // Proyección a plano base
+    const N_rad = a_ellip / Math.sqrt(1 - e2_ellip * Math.pow(Math.sin(l), 2));
+    const M_rad = a_ellip * (1 - e2_ellip / 4) * (l - lat0_loc);
+    
+    let eg = e0_loc + N_rad * Math.cos(l) * (ln - lon0_loc);
+    let ng = n0_loc + M_rad;
+    
+    // Aplicar Transformación de Helmert 2D
+    let dN = ng - grid_n;
+    let dE = eg - grid_e;
+    
+    let du = dN * Math.cos(-rot_loc) + dE * Math.sin(-rot_loc);
+    let dv = -dN * Math.sin(-rot_loc) + dE * Math.cos(-rot_loc);
+    
+    return { 
+        e: (dv * esc_loc) + grid_e + shift_e, 
+        n: (du * esc_loc) + grid_n + shift_n 
+    };
 }
 
-// Sistema Local a WGS84 Lat/Lon
+// Sistema Local a WGS84 Lat/Lon CORREGIDO (basado en archivo .dc)
 function localToWgs(e, n) {
-    let u=(n-24876.3631-4.9352)/esc_loc, v=(e-9765.8504-(-5.6928))/esc_loc;
-    let ng=(u*Math.cos(rot_loc)+v*Math.sin(rot_loc))+24876.3631, eg=(-u*Math.sin(rot_loc)+v*Math.cos(rot_loc))+9765.8504;
-    let ph=(ng-n0_loc)/(6378137*(1-0.0033528/4))+lat0_loc, d=(eg-e0_loc)/(6378137/Math.sqrt(1-0.0066943*Math.sin(ph)**2));
-    return { lat: ph*180/Math.PI, lon: (lon0_loc+d/Math.cos(ph))*180/Math.PI };
+    // Revertir traslación y escala
+    let u = (n - grid_n - shift_n) / esc_loc;
+    let v = (e - grid_e - shift_e) / esc_loc;
+    
+    // Revertir rotación
+    let ng = (u * Math.cos(rot_loc) + v * Math.sin(rot_loc)) + grid_n;
+    let eg = (-u * Math.sin(rot_loc) + v * Math.cos(rot_loc)) + grid_e;
+    
+    // Plano base a coordenadas geodésicas
+    let ph = (ng - n0_loc) / (a_ellip * (1 - e2_ellip / 4)) + lat0_loc;
+    let N_rad = a_ellip / Math.sqrt(1 - e2_ellip * Math.pow(Math.sin(ph), 2));
+    let dLon = (eg - e0_loc) / (N_rad * Math.cos(ph));
+    
+    return { 
+        lat: ph * 180 / Math.PI, 
+        lon: (lon0_loc + dLon) * 180 / Math.PI 
+    };
 }
 
 function toggleGPS() {
@@ -433,6 +478,7 @@ function savePt(t) {
     points.push({ name, lat: cLat, lon: cLon, alt: cAlt, acc: cAcc, sys: sys });
     L.circleMarker([cLat, cLon], {radius:6, color:'#000', fillColor:'#ff3b30', fillOpacity:1, weight:2}).addTo(mLayer);
     document.getElementById('totalPts').innerText = points.length; closeMeasure();
+    document.getElementById('downloadBtn').style.display = 'block'; // Mostrar botón de descarga
 }
 function closeMeasure() { document.getElementById('measurePanel').style.display = 'none'; if(mWatchId) navigator.geolocation.clearWatch(mWatchId); }
 function exportCSV() {
